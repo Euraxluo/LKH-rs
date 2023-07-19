@@ -1,0 +1,18 @@
+lkh_home: source_code/LKHDemo
+lkh_src_dir: source_code/LKHDemo/SRC
+lkh_header_dir: source_code/LKHDemo/SRC/INCLUDE
+lkh_obj_dir: target/out
+lkh_wrapper_header: source_code/wrapper.h
+compile_bin:
+flags:
+  - '-O3' # for gcc
+  - '-w' # for gcc
+  - '-DDefineVAR' # for gcc
+  - '-g' # for gcc
+  - '-fno-unsafe-math-optimizations' # for gcc
+  - '-fcommon' # for gcc
+#  - '/O2' # for win cl
+#  - '/fp:precise' # for win cl
+#  - '/Oi' # for win cl
+#  - '/Og' # for win cl
+#  - '/DDefineVAR' # for win cl

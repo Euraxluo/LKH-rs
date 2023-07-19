@@ -1,0 +1,26 @@
+[package]
+name = "LKH-rs"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[[bin]]
+name="main"
+path="src/main.rs"
+
+[lib]
+name = "LKH"
+crate-type = ["rlib"]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.66.1"
+envmnt = "0.10.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+cc = { version = "1.0.79", features = ["parallel"] }
+dunce = "1.0.4"
+
+[dependencies]
