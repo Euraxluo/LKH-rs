@@ -3,6 +3,7 @@
 use bindgen::Bindings;
 use cc;
 use dunce;
+use ignore;
 use serde::Deserialize;
 use std::collections::hash_map;
 use std::ffi::OsStr;
@@ -12,6 +13,7 @@ use std::hash::Hasher;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::{env, fs, io};
+
 macro_rules! log {
     ($($tokens: tt)*) => {
         let config_str =format!($($tokens)*);
@@ -21,7 +23,13 @@ macro_rules! log {
 
     }
 }
+#[cfg(windows)]
+const CONFIG_FILE: &str = "build.win.yaml";
 
+#[cfg(unix)]
+const CONFIG_FILE: &str = "build.unix.yaml";
+
+#[cfg(not(any(windows, unix)))]
 const CONFIG_FILE: &str = "build.yaml";
 
 #[derive(Debug, Deserialize)]
@@ -31,11 +39,30 @@ struct Config {
     pub lkh_src_dir: String,
     pub lkh_header_dir: String,
     pub lkh_wrapper_header: String,
+    pub generate_wrapper_header: Option<bool>,
     pub compile_bin: Option<String>,
     pub flags: Vec<String>,
+    pub excludes: Option<Vec<String>>,
 }
 
 impl Config {
+    fn matches_excludes(&self, input: &str) -> bool {
+        let ignore = match &self.excludes {
+            Some(excludes_list) => {
+                let mut build_ignore =
+                    ignore::gitignore::GitignoreBuilder::new(env!("CARGO_MANIFEST_DIR"));
+                for ele in excludes_list {
+                    build_ignore.add_line(None, ele).expect("add_line failed");
+                }
+                build_ignore.build().expect("ignore_list build failed")
+            }
+            None => return false,
+        };
+        let path = Path::new(input);
+        ignore
+            .matched_path_or_any_parents(path, path.is_dir())
+            .is_ignore()
+    }
     // path normalize
     fn normalize_paths(&mut self) {
         let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -55,6 +82,10 @@ impl Config {
         self.lkh_header_dir = path_to_string(Path::new(&self.lkh_header_dir), &cargo_path, true);
         self.lkh_wrapper_header =
             path_to_string(Path::new(&self.lkh_wrapper_header), &cargo_path, true);
+        self.generate_wrapper_header = match self.generate_wrapper_header {
+            Some(flag) => Some(flag),
+            _ => Some(true),
+        };
     }
 
     fn get_sources(&self) -> Vec<String> {
@@ -62,14 +93,17 @@ impl Config {
         for entry in fs::read_dir(&self.lkh_src_dir).expect("read sources failed") {
             let path = entry.unwrap().path();
             if path.extension() == Some("c".as_ref()) {
-                sources.push(path_to_string(
+                let path_str = path_to_string(
                     Path::new(&path),
                     &PathBuf::from(env!("CARGO_MANIFEST_DIR")),
                     true,
-                ));
+                );
+                if self.matches_excludes(&path_str) {
+                    continue;
+                }
+                sources.push(path_str);
             }
         }
-        log!("sources:{:#?}", sources);
         sources
     }
 
@@ -78,14 +112,17 @@ impl Config {
         for entry in fs::read_dir(&self.lkh_header_dir).expect("read headers failed") {
             let path = entry.unwrap().path();
             if path.extension() == Some("h".as_ref()) {
-                headers.push(path_to_string(
+                let path_str = path_to_string(
                     Path::new(&path),
                     &PathBuf::from(env!("CARGO_MANIFEST_DIR")),
                     true,
-                ));
+                );
+                if self.matches_excludes(&path_str) {
+                    continue;
+                }
+                headers.push(path_str);
             }
         }
-        log!("headers:{:#?}", headers);
         headers
     }
 }
@@ -113,7 +150,8 @@ fn parse_config() -> Config {
     config.normalize_paths();
     // log config to terminal
     log!("LKH-BUILD configuration {} :: {:#?}", CONFIG_FILE, config);
-    log!("LKH-BUILD headers {:#?}", config.get_headers());
+    log!("LKH-BUILD headers {:?} {:#?}",config.get_headers().len(), config.get_headers());
+    log!("LKH-BUILD sources {:?} {:#?}",config.get_sources().len() ,config.get_sources());
     config
 }
 
@@ -145,6 +183,9 @@ fn path_to_string(path: &Path, base: &Path, to_unix: bool) -> String {
 
 // scan header and gen wrapper header
 fn wrapper_header_build(config: &Config) {
+    if !config.generate_wrapper_header.unwrap() {
+        return;
+    }
     // collect all header file from header dir path
     let entries = fs::read_dir(&config.lkh_header_dir).expect("read header file dir failed");
     let header_paths: Vec<PathBuf> = entries

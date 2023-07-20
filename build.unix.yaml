@@ -1,6 +1,6 @@
-lkh_home: source_code/LKHWin-3.0.9
-lkh_src_dir: source_code/LKHWin-3.0.9/SRC
-lkh_header_dir: source_code/LKHWin-3.0.9/SRC/INCLUDE
+lkh_home : source_code/LKHWin-3.0.9
+lkh_src_dir : source_code/LKHWin-3.0.9/SRC
+lkh_header_dir : source_code/LKHWin-3.0.9/SRC/INCLUDE
 lkh_obj_dir: target/out
 lkh_wrapper_header: source_code/wrapper.h
 generate_wrapper_header: false
