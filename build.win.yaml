@@ -16,5 +16,4 @@ flags:
   - '/O2' # for win cl
   - '/fp:precise' # for win cl
   - '/Oi' # for win cl
-  - '/Og' # for win cl
   - '/DTWO_LEVEL_TREE' # for win cl

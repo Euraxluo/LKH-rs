@@ -1,0 +1,14 @@
+lkh_home: source_code/LKHDemo
+lkh_src_dir: source_code/LKHDemo/SRC
+lkh_header_dir: source_code/LKHDemo/SRC/INCLUDE
+lkh_obj_dir: target/out
+lkh_wrapper_header: source_code/demo_wrapper.h
+generate_wrapper_header: true
+compile_bin:
+excludes:
+  - '*main.c'
+flags:
+ - '/O2' # for win cl
+ - '/fp:precise' # for win cl
+ - '/Oi' # for win cl
+ - '/DDefineVAR' # for win cl

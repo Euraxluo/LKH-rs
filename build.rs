@@ -23,12 +23,28 @@ macro_rules! log {
 
     }
 }
+#[cfg(feature = "demo")]
+#[cfg(unix)]
+const CONFIG_FILE: &str = "build.demo.unix.yaml";
+
+#[cfg(feature = "demo")]
+#[cfg(windows)]
+const CONFIG_FILE: &str = "build.demo.win.yaml";
+
+#[cfg(not(feature = "demo"))]
 #[cfg(windows)]
 const CONFIG_FILE: &str = "build.win.yaml";
 
+#[cfg(not(feature = "demo"))]
+#[cfg(target_os="macos")]
+const CONFIG_FILE: &str = "build.osx.yaml";
+
+#[cfg(not(feature = "demo"))]
+#[cfg(not(target_os="macos"))]
 #[cfg(unix)]
 const CONFIG_FILE: &str = "build.unix.yaml";
 
+#[cfg(not(feature = "demo"))]
 #[cfg(not(any(windows, unix)))]
 const CONFIG_FILE: &str = "build.yaml";
 
@@ -150,8 +166,16 @@ fn parse_config() -> Config {
     config.normalize_paths();
     // log config to terminal
     log!("LKH-BUILD configuration {} :: {:#?}", CONFIG_FILE, config);
-    log!("LKH-BUILD headers {:?} {:#?}",config.get_headers().len(), config.get_headers());
-    log!("LKH-BUILD sources {:?} {:#?}",config.get_sources().len() ,config.get_sources());
+    log!(
+        "LKH-BUILD headers {:?} {:#?}",
+        config.get_headers().len(),
+        config.get_headers()
+    );
+    log!(
+        "LKH-BUILD sources {:?} {:#?}",
+        config.get_sources().len(),
+        config.get_sources()
+    );
     config
 }
 
@@ -159,7 +183,11 @@ fn parse_config() -> Config {
 fn path_to_string(path: &Path, base: &Path, to_unix: bool) -> String {
     if fs::metadata(path).is_err() {
         log!("path_to_string: path:{:?} base:{:#?}", path, base);
-        fs::create_dir_all(path).unwrap();
+        if path.to_path_buf().extension() == None {
+            fs::create_dir_all(path).unwrap();
+        } else {
+            fs::File::create(path).unwrap();
+        }
     }
     let path1 = dunce::canonicalize(path).expect("path not found,can not canonicalize");
     let path2 = dunce::canonicalize(base).expect("path not found,can not canonicalize");
