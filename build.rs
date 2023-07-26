@@ -5,7 +5,7 @@ use cc;
 use dunce;
 use ignore;
 use serde::Deserialize;
-use std::collections::hash_map;
+use std::collections::{hash_map, HashSet};
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
@@ -36,17 +36,30 @@ const CONFIG_FILE: &str = "build.demo.win.yaml";
 const CONFIG_FILE: &str = "build.win.yaml";
 
 #[cfg(not(feature = "demo"))]
-#[cfg(target_os="macos")]
+#[cfg(target_os = "macos")]
 const CONFIG_FILE: &str = "build.osx.yaml";
 
 #[cfg(not(feature = "demo"))]
-#[cfg(not(target_os="macos"))]
+#[cfg(not(target_os = "macos"))]
 #[cfg(unix)]
 const CONFIG_FILE: &str = "build.unix.yaml";
 
 #[cfg(not(feature = "demo"))]
 #[cfg(not(any(windows, unix)))]
 const CONFIG_FILE: &str = "build.yaml";
+
+#[derive(Debug)]
+struct IgnoreMacros(HashSet<String>);
+
+impl bindgen::callbacks::ParseCallbacks for IgnoreMacros {
+    fn will_parse_macro(&self, name: &str) -> bindgen::callbacks::MacroParsingBehavior {
+        if self.0.contains(name) {
+            bindgen::callbacks::MacroParsingBehavior::Ignore
+        } else {
+            bindgen::callbacks::MacroParsingBehavior::Default
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -274,9 +287,20 @@ fn compile_obj(config: &Config) {
 
 // bindgen config and generate
 fn generate_bindings(config: &Config) {
+    let ignored_macros = IgnoreMacros(
+        vec![
+            "FP_INFINITE".into(),
+            "FP_NAN".into(),
+            "FP_NORMAL".into(),
+            "FP_SUBNORMAL".into(),
+            "FP_ZERO".into(),
+        ]
+        .into_iter()
+        .collect(),
+    );
     let bindings: Bindings = bindgen::Builder::default()
         .header(&config.lkh_wrapper_header)
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(ignored_macros))
         .generate()
         .expect("Unable to generate bindings");
     // Write the bindings to the CARGO_MANIFEST_DIR/src/bindings.rs file.
