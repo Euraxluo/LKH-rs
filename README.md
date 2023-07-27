@@ -28,7 +28,7 @@ lkh --par .\source_code\pr2392.par
 
 
 ## Roadmap
-This project aims to provide full Rust bindings and integrations for the [LKH3]([http://webhotel4.ruc.dk/~keld/research/) library for solving **TSP(traveling salesperson problems)**. Here is an overview of our planned roadmap:
+This project aims to provide full Rust bindings and integrations for the [LKH3](http://webhotel4.ruc.dk/~keld/research/) library for solving **TSP(traveling salesperson problems)**. Here is an overview of our planned roadmap:
 
 **Near Term Goals**
 - [x] Complete cross-platform bindings for LKH using Bindgen and cc-rs(#1)
