@@ -46,9 +46,9 @@ fn main() {
             let mut last_time = GetTime();
             StartTime = last_time;
             MaxMatrixDimension = 20000;
-            MergeWithTour = if Recombination == RecombinationTypes_GPX2 {
+            MergeWithTour = if Recombination == RecombinationTypes_GPX2.try_into().unwrap() {
                 Some(MergeWithTourGPX2)
-            } else if Recombination == RecombinationTypes_CLARIST {
+            } else if Recombination == RecombinationTypes_CLARIST.try_into().unwrap() {
                 Some(MergeWithTourCLARIST)
             } else {
                 Some(MergeWithTourIPT)
@@ -76,13 +76,13 @@ fn main() {
             AllocateStructures();
             info!("AllocateStructures: {:?}", GetTime() - StartTime);
 
-            if ProblemType == Types_TSPTW {
+            if ProblemType == Types_TSPTW.try_into().unwrap() {
                 TSPTW_Reduce();
             }
-            if ProblemType == Types_VRPB || ProblemType == Types_VRPBTW {
+            if ProblemType == Types_VRPB.try_into().unwrap() || ProblemType == Types_VRPBTW.try_into().unwrap() {
                 VRPB_Reduce();
             }
-            if ProblemType == Types_PDPTW {
+            if ProblemType == Types_PDPTW.try_into().unwrap() {
                 PDPTW_Reduce();
             }
             CreateCandidateSet();
@@ -152,13 +152,13 @@ fn main() {
                                 print!("  Merged with {}: Cost = {}", i + 1, cost);
                             }
 
-                            if Optimum != MINUS_INFINITY && Optimum != 0 {
-                                if ProblemType != Types_CCVRP
-                                    && ProblemType != Types_TRP
-                                    && ProblemType != Types_MLP
-                                    && ProblemType != Types_CVRPTW
-                                    && MTSPObjective != Objectives_MINMAX
-                                    && MTSPObjective != Objectives_MINMAX_SIZE
+                            if Optimum != MINUS_INFINITY.try_into().unwrap() && Optimum != 0 {
+                                if ProblemType != Types_CCVRP.try_into().unwrap()
+                                    && ProblemType != Types_TRP.try_into().unwrap()
+                                    && ProblemType != Types_MLP.try_into().unwrap()
+                                    && ProblemType != Types_CVRPTW.try_into().unwrap()
+                                    && MTSPObjective != Objectives_MINMAX.try_into().unwrap()
+                                    && MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap()
                                 {
                                     print!(
                                         ", Gap = {:0.4}%",
@@ -212,8 +212,8 @@ fn main() {
                 }
                 let old_optimum = Optimum;
                 if Penalty.is_none()
-                    || (MTSPObjective != Objectives_MINMAX
-                        && MTSPObjective != Objectives_MINMAX_SIZE)
+                    || (MTSPObjective != Objectives_MINMAX.try_into().unwrap()
+                        && MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap())
                 {
                     if CurrentPenalty == 0 && cost < Optimum {
                         Optimum = cost;
@@ -245,12 +245,12 @@ fn main() {
                 }
 
                 if StopAtOptimum != 0 && MaxPopulationSize >= 1 {
-                    if ProblemType != Types_CCVRP
-                        && ProblemType != Types_TRP
-                        && ProblemType != Types_KTSP
-                        && ProblemType != Types_MLP
-                        && MTSPObjective != Objectives_MINMAX
-                        && if MTSPObjective != Objectives_MINMAX_SIZE {
+                    if ProblemType != Types_CCVRP.try_into().unwrap()
+                        && ProblemType != Types_TRP.try_into().unwrap()
+                        && ProblemType != Types_KTSP.try_into().unwrap()
+                        && ProblemType != Types_MLP.try_into().unwrap()
+                        && MTSPObjective != Objectives_MINMAX.try_into().unwrap()
+                        && if MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap() {
                             CurrentPenalty == 0 && cost == Optimum
                         } else {
                             CurrentPenalty == Optimum
@@ -278,7 +278,7 @@ fn main() {
                     let first_node_ptr = FirstNode;
                     let mut current = &mut *FirstNode;
                     loop {
-                        if ProblemType != Types_HCP && ProblemType != Types_HPP {
+                        if ProblemType != Types_HCP.try_into().unwrap() && ProblemType != Types_HPP.try_into().unwrap() {
                             let d = C.unwrap()(current, current.Suc);
                             AddCandidate(current, current.Suc, d, i32::MAX);
                             AddCandidate(current.Suc, current, d, i32::MAX);
