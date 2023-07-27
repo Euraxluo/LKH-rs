@@ -1,8 +1,13 @@
 [package]
 name = "LKH-rs"
 version = "0.1.0"
+authors = ["Euraxluo <euraxluo@outlook.com>"]
 edition = "2021"
 build = "build.rs"
+description = "The rust binding created for the LKH3"
+readme = "README.md"
+repository = "https://github.com/Euraxluo/LKH-rs"
+
 
 [[bin]]
 name="main"
@@ -25,6 +30,11 @@ dunce = "1.0.4"
 ignore = "0.4.20"
 
 [dependencies]
+clap = { version = "4.3.19", features = ["derive"] }
+dunce = "1.0.4"
+env_logger = "0.10.0"
+log = "0.4.19"
+pathdiff = "0.2.1"
 
 
 [features]
