@@ -16,6 +16,17 @@ struct Args {
     par: String,
 }
 
+#[cfg(feature = "demo")]
+fn main() {
+    println!("hello bind");
+    unsafe {
+        for i in 0..10 {
+            println!("Time {:?}", GetTime());
+        }
+    }
+}
+
+#[cfg(not(feature = "demo"))]
 fn main() {
     let args = Args::parse();
     env_logger::init();
@@ -139,7 +150,7 @@ fn main() {
                         cost = MergeTourWithIndividual(i);
                         if TraceLevel >= 1
                             && (CurrentPenalty < old_penalty
-                                || (CurrentPenalty == old_penalty && cost < old_cost))
+                            || (CurrentPenalty == old_penalty && cost < old_cost))
                         {
                             if CurrentPenalty != 0 {
                                 print!(
@@ -213,7 +224,7 @@ fn main() {
                 let old_optimum = Optimum;
                 if Penalty.is_none()
                     || (MTSPObjective != Objectives_MINMAX.try_into().unwrap()
-                        && MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap())
+                    && MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap())
                 {
                     if CurrentPenalty == 0 && cost < Optimum {
                         Optimum = cost;
@@ -251,10 +262,10 @@ fn main() {
                         && ProblemType != Types_MLP.try_into().unwrap()
                         && MTSPObjective != Objectives_MINMAX.try_into().unwrap()
                         && if MTSPObjective != Objectives_MINMAX_SIZE.try_into().unwrap() {
-                            CurrentPenalty == 0 && cost == Optimum
-                        } else {
-                            CurrentPenalty == Optimum
-                        }
+                        CurrentPenalty == 0 && cost == Optimum
+                    } else {
+                        CurrentPenalty == Optimum
+                    }
                     {
                         Runs = Run;
                         break;
