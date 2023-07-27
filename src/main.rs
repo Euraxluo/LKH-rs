@@ -133,13 +133,13 @@ fn main() {
                 // 种群合并
                 if MaxPopulationSize > 1 && TSPTW_Makespan == 0 {
                     let mut i = 0;
-                    for i in 0..PopulationSize {
-                        let OldPenalty: GainType = CurrentPenalty;
-                        let OldCost: GainType = cost;
+                    loop {
+                        let old_penalty: GainType = CurrentPenalty;
+                        let old_cost: GainType = cost;
                         cost = MergeTourWithIndividual(i);
                         if TraceLevel >= 1
-                            && (CurrentPenalty < OldPenalty
-                                || (CurrentPenalty == OldPenalty && cost < OldCost))
+                            && (CurrentPenalty < old_penalty
+                                || (CurrentPenalty == old_penalty && cost < old_cost))
                         {
                             if CurrentPenalty != 0 {
                                 print!(
@@ -174,6 +174,10 @@ fn main() {
 
                             print!("\n");
                         }
+                        i += 1;
+                        if i >= PopulationSize {
+                            break;
+                        }
                     }
                     if HasFitness(CurrentPenalty, cost) == 0 {
                         if PopulationSize < MaxPopulationSize {
@@ -206,7 +210,7 @@ fn main() {
                     RecordBestTour();
                     WriteTour(TourFileName, BestTour, BestCost);
                 }
-                let mut old_optimum = Optimum;
+                let old_optimum = Optimum;
                 if Penalty.is_none()
                     || (MTSPObjective != Objectives_MINMAX
                         && MTSPObjective != Objectives_MINMAX_SIZE)
@@ -260,16 +264,16 @@ fn main() {
                     && (PopulationSize == MaxPopulationSize || Run >= 2 * MaxPopulationSize)
                     && Run < Runs
                 {
-                    let mut Parent1 = LinearSelection(PopulationSize, 1.25);
-                    let mut Parent2;
+                    let parent1 = LinearSelection(PopulationSize, 1.25);
+                    let mut parent2;
                     loop {
-                        Parent2 = LinearSelection(PopulationSize, 1.25);
-                        if Parent2 != Parent1 {
+                        parent2 = LinearSelection(PopulationSize, 1.25);
+                        if parent2 != parent1 {
                             break;
                         }
                     }
 
-                    ApplyCrossover(Parent1, Parent2);
+                    ApplyCrossover(parent1, parent2);
 
                     let first_node_ptr = FirstNode;
                     let mut current = &mut *FirstNode;
@@ -352,29 +356,29 @@ fn main() {
                 MTSP_WriteSolution(MTSPSolutionFileName, BestPenalty, BestCost);
                 SINTEF_WriteSolution(SINTEFSolutionFileName, BestCost);
             }
-            if ProblemType == Types_ACVRP
-                || ProblemType == Types_BWTSP
-                || ProblemType == Types_CCVRP
-                || ProblemType == Types_CTSP
-                || ProblemType == Types_CVRP
-                || ProblemType == Types_CVRPTW
-                || ProblemType == Types_MLP
-                || ProblemType == Types_M_PDTSP
-                || ProblemType == Types_M1_PDTSP
+            if ProblemType == Types_ACVRP.try_into().unwrap()
+                || ProblemType == Types_BWTSP.try_into().unwrap()
+                || ProblemType == Types_CCVRP.try_into().unwrap()
+                || ProblemType == Types_CTSP.try_into().unwrap()
+                || ProblemType == Types_CVRP.try_into().unwrap()
+                || ProblemType == Types_CVRPTW.try_into().unwrap()
+                || ProblemType == Types_MLP.try_into().unwrap()
+                || ProblemType == Types_M_PDTSP.try_into().unwrap()
+                || ProblemType == Types_M1_PDTSP.try_into().unwrap()
                 || MTSPObjective != -1
-                || ProblemType == Types_ONE_PDTSP
-                || ProblemType == Types_OVRP
-                || ProblemType == Types_PDTSP
-                || ProblemType == Types_PDTSPL
-                || ProblemType == Types_PDPTW
-                || ProblemType == Types_RCTVRP
-                || ProblemType == Types_RCTVRPTW
-                || ProblemType == Types_SOP
-                || ProblemType == Types_TRP
-                || ProblemType == Types_TSPTW
-                || ProblemType == Types_VRPB
-                || ProblemType == Types_VRPBTW
-                || ProblemType == Types_VRPPD
+                || ProblemType == Types_ONE_PDTSP.try_into().unwrap()
+                || ProblemType == Types_OVRP.try_into().unwrap()
+                || ProblemType == Types_PDTSP.try_into().unwrap()
+                || ProblemType == Types_PDTSPL.try_into().unwrap()
+                || ProblemType == Types_PDPTW.try_into().unwrap()
+                || ProblemType == Types_RCTVRP.try_into().unwrap()
+                || ProblemType == Types_RCTVRPTW.try_into().unwrap()
+                || ProblemType == Types_SOP.try_into().unwrap()
+                || ProblemType == Types_TRP.try_into().unwrap()
+                || ProblemType == Types_TSPTW.try_into().unwrap()
+                || ProblemType == Types_VRPB.try_into().unwrap()
+                || ProblemType == Types_VRPBTW.try_into().unwrap()
+                || ProblemType == Types_VRPPD.try_into().unwrap()
             {
                 print!(
                     "Best {:?} solution:\n",
