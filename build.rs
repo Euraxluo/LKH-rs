@@ -290,6 +290,8 @@ fn generate_bindings(config: &Config) {
     let ignored_macros = IgnoreMacros(
         vec![
             "FP_INFINITE".into(),
+            "MINUS_INFINITY".into(),
+            "PLUS_INFINITY".into(),
             "FP_NAN".into(),
             "FP_NORMAL".into(),
             "FP_SUBNORMAL".into(),
