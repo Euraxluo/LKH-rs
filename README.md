@@ -36,22 +36,22 @@ This project aims to provide full Rust bindings and integrations for the [LKH3](
 - [ ] Set up GitHub Actions for CI/CD across platforms (#3)
     - [ ] Cross compile and test on Windows, Linux, macOS
     - [ ] Automated publishing to Crates.io
-- [ ] Add documentation and examples
-- [ ] Generate Python bindings using PyO3 with maturin (#4)
+- [ ] Add documentation and examples(#4)
+- [ ] Generate Python bindings using PyO3 with maturin (#5)
 
 **Longer Term Goals**
-- [ ] Explore safety improvements using Rust abstractions (#5)
+- [ ] Explore safety improvements using Rust abstractions (#6)
     - [ ] Using Rust's enums to create type-safe wrappers around LKH data structures. This prevents invalid states or values.
     - [ ] Leveraging Rust's ownership and borrowing system to safely pass pointers/references to LKH instead of raw pointers. This helps prevent memory safety issues.
     - [ ] Wrapping unsafe LKH functions in safe Rust abstractions that enforce valid usage at compile time. 
     - [ ] Using options and results to handle error cases instead of just returning error codes that need to be checked.
     - [ ] Providing higher level iterator interfaces to LKH data structures to avoid manual memory management.
     - [ ] Using cargo features to enable optional unsafe functionality, keeping the default safe.
-- [ ] Expose more LKH functionality as safe Rust APIs and expose it as an interface to other languages like Python (#6)
-- [ ] Optimize performance critical sections with Rust implementations (#7)
+- [ ] Expose more LKH functionality as safe Rust APIs and expose it as an interface to other languages like Python (#7)
+- [ ] Optimize performance critical sections with Rust implementations (#8)
     - [ ] parallel computing
     - [ ] Safe and high-performance memory utilization
-- [ ] Evaluate WebAssembly integration for web deployment (#8)
+- [ ] Evaluate WebAssembly integration for web deployment (#9)
 
 
 Overall the goal is to make use of Rust language features to minimize the unsafe code needed to integrate with LKH, and surface a safer API for users. This would prevent memory safety issues, invalid state bugs etc at compile time rather than just runtime.
