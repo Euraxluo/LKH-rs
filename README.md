@@ -62,6 +62,9 @@ The roadmap is subject to change based on feedback, contributions and maintenanc
 
 Let me know if you would like me to modify, expand or clarify this roadmap draft further. I tried to cover the key areas and goals you envisioned in an overview format, but I'm happy to refine it as much as needed to accurately communicate our plans to potential contributors and users. 
 
+## Contribution
+We welcome **Bug Reports**, **Feature Requests** and **Other Contributions** from the community.
+ 
 ## change log:
 
 ### Version 0.1.0
