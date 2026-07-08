@@ -101,12 +101,36 @@ println!("{:?}", report.tour);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The first supported builders are `euclidean_2d`, `distance_matrix`, and
-`asymmetric_distance_matrix`. Solving uses the in-memory model directly. TSPLIB
-and LKH parameter text can still be rendered or written explicitly with
-`to_tsplib`, `write_tsplib`, `to_lkh_parameter_file`, and
-`write_lkh_parameter_file` when callers want files for compatibility or
-debugging.
+The core model is generic over LKH problem types. Convenience builders such as
+`euclidean_2d`, `distance_matrix`, and `asymmetric_distance_matrix` are thin
+wrappers over the same `RoutingProblem` representation, while `with_keyword`
+and `with_section` allow callers to express CVRP, TSPTW, pickup-and-delivery,
+clustered, prize-collecting, or other LKH variants using their native TSPLIB/LKH
+fields:
+
+```rust
+use lkh_rs::{solve_problem, ProblemKind, RoutingProblem, SearchParameters};
+
+let problem = RoutingProblem::named("tiny_cvrp", ProblemKind::Cvrp, 4)?
+    .with_keyword("CAPACITY", "3")?
+    .with_keyword("EDGE_WEIGHT_TYPE", "EXPLICIT")?
+    .with_keyword("EDGE_WEIGHT_FORMAT", "FULL_MATRIX")?
+    .with_section(
+        "EDGE_WEIGHT_SECTION",
+        ["0 1 1 2", "1 0 2 1", "1 2 0 1", "2 1 1 0"],
+    )?
+    .with_section("DEMAND_SECTION", ["1 0", "2 1", "3 1", "4 1"])?
+    .with_section("DEPOT_SECTION", ["1", "-1"])?;
+
+let report = solve_problem(&problem, &SearchParameters::new())?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Native solving renders the problem and parameter data in memory and feeds LKH's
+existing parser without creating temporary files. TSPLIB and LKH parameter text
+can still be rendered or written explicitly with `to_tsplib`, `write_tsplib`,
+`to_lkh_parameter_file`, and `write_lkh_parameter_file` when callers want files
+for compatibility, inspection, or debugging.
 
 ## Safety model
 

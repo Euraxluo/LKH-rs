@@ -1,15 +1,23 @@
 #![allow(static_mut_refs)]
 
+//! Safe solver entry points around LKH's process-global C implementation.
+//!
+//! LKH stores most solver state in mutable globals. This module serializes all
+//! safe calls behind a mutex, copies the final result into owned Rust values,
+//! and provides both legacy parameter-file solving and the newer in-memory
+//! programmatic path.
+
 use crate::error::LkhError;
-use crate::problem::{EdgeData, RoutingProblem, SearchParameters};
+use crate::problem::{RoutingProblem, SearchParameters};
 use crate::sys::*;
 use crate::{MINUS_INFINITY, PLUS_INFINITY};
 use std::ffi::CString;
-use std::mem;
-use std::os::raw::c_ulong;
+use std::io;
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
+use std::thread::JoinHandle;
 
 static SOLVER_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -41,10 +49,16 @@ impl SolveOptions {
 /// Summary copied out of LKH's global state after a solve.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SolveReport {
+    /// Best objective cost found by LKH.
     pub best_cost: i64,
+    /// Best penalty found by LKH. Feasible VRP-like solutions usually have
+    /// penalty zero.
     pub best_penalty: i64,
+    /// Number of runs actually completed.
     pub runs: i32,
+    /// Dimension reported by LKH after reading the problem.
     pub dimension: i32,
+    /// Best tour copied from LKH's `BestTour` array.
     pub tour: Vec<i32>,
 }
 
@@ -67,7 +81,9 @@ pub fn solve_problem(
 /// Native options for solving a programmatic problem.
 #[derive(Debug, Clone)]
 pub struct ProgrammaticSolveOptions {
+    /// Optional backend-level trace override applied after reading parameters.
     pub trace_level_override: Option<i32>,
+    /// Maximum dimension used for explicit matrix allocation.
     pub max_matrix_dimension: i32,
 }
 
@@ -87,7 +103,6 @@ pub fn solve_problem_with_options(
     options: ProgrammaticSolveOptions,
 ) -> Result<SolveReport, LkhError> {
     parameters.validate()?;
-    validate_programmatic_parameters(parameters)?;
 
     let lock = SOLVER_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().map_err(|_| LkhError::SolverLockPoisoned)?;
@@ -148,6 +163,220 @@ fn canonical_parameter_file(path: &Path) -> Result<PathBuf, LkhError> {
         source,
     })
 }
+
+struct InMemoryFile {
+    path: String,
+    read_fd: Option<libc::c_int>,
+    writer: Option<JoinHandle<io::Result<()>>>,
+}
+
+impl InMemoryFile {
+    fn new(label: &'static str, contents: String) -> Result<Self, LkhError> {
+        let (path, read_fd, writer) = spawn_in_memory_file(label, contents)?;
+        Ok(Self {
+            path,
+            read_fd: Some(read_fd),
+            writer: Some(writer),
+        })
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn finish(mut self) -> Result<(), LkhError> {
+        if let Some(read_fd) = self.read_fd.take() {
+            close_fd(read_fd);
+        }
+        finish_in_memory_writer(self.writer.take())
+    }
+}
+
+impl Drop for InMemoryFile {
+    fn drop(&mut self) {
+        if let Some(read_fd) = self.read_fd.take() {
+            close_fd(read_fd);
+        }
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
+    }
+}
+
+#[cfg(unix)]
+fn spawn_in_memory_file(
+    label: &'static str,
+    contents: String,
+) -> Result<(String, libc::c_int, JoinHandle<io::Result<()>>), LkhError> {
+    use std::thread;
+
+    let mut fds = [0; 2];
+    // SAFETY: `fds` points to two valid integers. On success both descriptors
+    // are owned by Rust below.
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(LkhError::InMemoryInitialization(format!(
+            "failed to create {label} pipe: {}",
+            io::Error::last_os_error()
+        )));
+    }
+    let read_fd = fds[0];
+    let write_fd = fds[1];
+    let path = fd_path(read_fd).ok_or_else(|| {
+        close_fd(read_fd);
+        close_fd(write_fd);
+        LkhError::InMemoryInitialization(format!(
+            "this platform does not expose /dev/fd or /proc/self/fd for {label}"
+        ))
+    })?;
+    let writer = thread::spawn(move || {
+        let result = write_all_to_fd(write_fd, contents.as_bytes());
+        close_fd(write_fd);
+        result
+    });
+    Ok((path, read_fd, writer))
+}
+
+#[cfg(unix)]
+fn fd_path(fd: libc::c_int) -> Option<String> {
+    let candidates = [format!("/dev/fd/{fd}"), format!("/proc/self/fd/{fd}")];
+    candidates
+        .into_iter()
+        .find(|candidate| Path::new(candidate).exists())
+}
+
+#[cfg(unix)]
+fn write_all_to_fd(fd: libc::c_int, mut bytes: &[u8]) -> io::Result<()> {
+    while !bytes.is_empty() {
+        // SAFETY: `fd` is a write descriptor owned by this thread. The pointer
+        // and length come from a live Rust slice.
+        let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
+        if written < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        if written == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "pipe write returned zero",
+            ));
+        }
+        bytes = &bytes[written as usize..];
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn close_fd(fd: libc::c_int) {
+    // SAFETY: Closing an fd is safe as long as ownership is not reused. Callers
+    // only pass descriptors created by `pipe` in this module.
+    unsafe {
+        libc::close(fd);
+    }
+}
+
+#[cfg(not(unix))]
+fn spawn_in_memory_file(
+    label: &'static str,
+    _contents: String,
+) -> Result<(String, libc::c_int, JoinHandle<io::Result<()>>), LkhError> {
+    Err(LkhError::InMemoryInitialization(format!(
+        "programmatic {label} solving without files is not supported on this platform yet"
+    )))
+}
+
+fn finish_in_memory_writer(writer: Option<JoinHandle<io::Result<()>>>) -> Result<(), LkhError> {
+    if let Some(writer) = writer {
+        match writer.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(source)) => Err(LkhError::InMemoryInitialization(format!(
+                "failed to write in-memory data: {source}"
+            ))),
+            Err(_) => Err(LkhError::InMemoryInitialization(
+                "in-memory data writer panicked".to_owned(),
+            )),
+        }
+    } else {
+        Ok(())
+    }
+}
+
+struct StdoutSilencer {
+    saved_fd: Option<libc::c_int>,
+}
+
+impl StdoutSilencer {
+    fn new() -> Result<Self, LkhError> {
+        silence_stdout()
+    }
+}
+
+impl Drop for StdoutSilencer {
+    fn drop(&mut self) {
+        if let Some(saved_fd) = self.saved_fd.take() {
+            restore_stdout(saved_fd);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn silence_stdout() -> Result<StdoutSilencer, LkhError> {
+    let dev_null = CString::new("/dev/null").unwrap();
+    // SAFETY: These calls operate on process-level stdout. Safe API calls are
+    // serialized by `SOLVER_LOCK`, so no other LKH solve is running here.
+    unsafe {
+        libc::fflush(ptr::null_mut());
+        let saved_fd = libc::dup(libc::STDOUT_FILENO);
+        if saved_fd < 0 {
+            return Err(LkhError::InMemoryInitialization(format!(
+                "failed to duplicate stdout: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        let null_fd = libc::open(dev_null.as_ptr(), libc::O_WRONLY);
+        if null_fd < 0 {
+            close_fd(saved_fd);
+            return Err(LkhError::InMemoryInitialization(format!(
+                "failed to open /dev/null: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        if libc::dup2(null_fd, libc::STDOUT_FILENO) < 0 {
+            let source = io::Error::last_os_error();
+            close_fd(null_fd);
+            restore_stdout(saved_fd);
+            return Err(LkhError::InMemoryInitialization(format!(
+                "failed to redirect stdout: {source}"
+            )));
+        }
+        close_fd(null_fd);
+        Ok(StdoutSilencer {
+            saved_fd: Some(saved_fd),
+        })
+    }
+}
+
+#[cfg(unix)]
+fn restore_stdout(saved_fd: libc::c_int) {
+    // SAFETY: `saved_fd` was returned by `dup(STDOUT_FILENO)` in
+    // `silence_stdout`.
+    unsafe {
+        libc::fflush(ptr::null_mut());
+        libc::dup2(saved_fd, libc::STDOUT_FILENO);
+        close_fd(saved_fd);
+    }
+}
+
+#[cfg(not(unix))]
+fn silence_stdout() -> Result<StdoutSilencer, LkhError> {
+    Ok(StdoutSilencer { saved_fd: None })
+}
+
+#[cfg(not(unix))]
+fn restore_stdout(_saved_fd: libc::c_int) {}
 
 struct StructureGuard {
     enabled: bool,
@@ -495,154 +724,120 @@ unsafe fn run_lkh_in_memory(
     parameters: &SearchParameters,
     options: &ProgrammaticSolveOptions,
 ) -> Result<SolveReport, LkhError> {
+    // Keep the programmatic path aligned with LKHmain.c: reset state, read
+    // parameters, read the problem, then run the same search loop.
     Gain23_Reset();
-    initialize_programmatic_parameters(parameters, options)?;
-    initialize_programmatic_problem(problem)?;
-    run_lkh_search()
+    reset_programmatic_run_state();
+    read_programmatic_parameters(parameters, options)?;
+    let last_time = GetTime();
+    StartTime = last_time;
+    read_programmatic_problem(problem)?;
+    run_lkh_search(last_time)
 }
 
-unsafe fn initialize_programmatic_parameters(
-    parameters: &SearchParameters,
-    options: &ProgrammaticSolveOptions,
-) -> Result<(), LkhError> {
-    ParameterFileName = ptr::null_mut();
-    ProblemFileName = ptr::null_mut();
-    PiFileName = ptr::null_mut();
-    InputTourFileName = ptr::null_mut();
-    OutputTourFileName = ptr::null_mut();
-    TourFileName = ptr::null_mut();
-    InitialTourFileName = ptr::null_mut();
-    SubproblemTourFileName = ptr::null_mut();
-    MTSPSolutionFileName = ptr::null_mut();
-    SINTEFSolutionFileName = ptr::null_mut();
-    TOPSolutionFileName = ptr::null_mut();
-    CandidateFiles = 0;
-    MergeTourFiles = 0;
-
-    Alpha = 0.0;
-    AscentCandidates = 50;
-    BackboneTrials = 0;
-    Backtracking = 0;
-    BWTSP_B = 0;
-    BWTSP_Q = 0;
-    BWTSP_L = i32::MAX;
-    CandidateSetSymmetric = 0;
-    CandidateSetType = CandidateSetTypes_ALPHA as i32;
-    Crossover = Some(ERXT);
-    DelaunayPartitioning = 0;
-    DelaunayPure = 0;
-    DemandDimension = 1;
-    DistanceLimit = f64::MAX;
-    Drones = 1;
-    Endurance = 0.0;
-    Excess = -1.0;
-    ExternalSalesmen = 0;
-    ExtraCandidates = 0;
-    ExtraCandidateSetSymmetric = 0;
-    ExtraCandidateSetType = CandidateSetTypes_QUADRANT as i32;
-    Gain23Used = 1;
-    GainCriterionUsed = 1;
-    GridSize = 1_000_000.0;
-    InitialPeriod = -1;
-    InitialStepSize = 0;
-    InitialTourAlgorithm = InitialTourAlgorithms_WALK as i32;
-    InitialTourFraction = 1.0;
-    KarpPartitioning = 0;
-    KCenterPartitioning = 0;
-    KMeansPartitioning = 0;
-    Kicks = 1;
-    KickType = 0;
-    MaxBreadth = i32::MAX;
-    MaxCandidates = 5;
-    MaxPopulationSize = 0;
-    MaxSwaps = -1;
-    MaxTrials = parameters.max_trials.unwrap_or(-1);
-    MaxMatrixDimension = options.max_matrix_dimension;
-    MoorePartitioning = 0;
-    MoveType = parameters.move_type.unwrap_or(5);
-    MoveTypeSpecial = 0;
-    MTSPDepot = 1;
-    MTSPMinSize = 1;
-    MTSPMaxSize = -1;
-    MTSPObjective = -1;
-    NonsequentialMoveType = -1;
-    Optimum = parameters.optimum.unwrap_or(MINUS_INFINITY) as GainType;
-    PatchingA = parameters.patching_a.unwrap_or(1);
-    PatchingC = parameters.patching_c.unwrap_or(0);
-    PatchingAExtended = 0;
-    PatchingARestricted = 0;
-    PatchingCExtended = 0;
-    PatchingCRestricted = 0;
-    Precision = 100;
-    Probability = 100;
-    POPMUSIC_InitialTour = 0;
-    POPMUSIC_MaxNeighbors = 5;
-    POPMUSIC_SampleSize = 10;
-    POPMUSIC_Solutions = 50;
-    POPMUSIC_Trials = 1;
-    Recombination = RecombinationTypes_IPT as i32;
-    RestrictedSearch = 1;
-    RohePartitioning = 0;
-    Runs = parameters.runs;
-    Salesmen = 1;
-    Scale = -1;
-    Seed = parameters.seed.unwrap_or(1);
-    SierpinskiPartitioning = 0;
-    StopAtOptimum = parameters.stop_at_optimum.unwrap_or(true) as i32;
-    Subgradient = 1;
-    SubproblemBorders = 0;
-    SubproblemsCompressed = 0;
-    SubproblemSize = 0;
-    SubsequentMoveType = 0;
-    SubsequentMoveTypeSpecial = 0;
-    SubsequentPatching = 1;
-    TimeLimit = parameters.time_limit.unwrap_or(f64::MAX);
-    TotalTimeLimit = parameters.total_time_limit.unwrap_or(f64::MAX);
-    TraceLevel = options
-        .trace_level_override
-        .unwrap_or(parameters.trace_level);
-    TSPTW_Makespan = 0;
-    ServiceTime = 0.0;
-    RiskThreshold = 0;
-    Capacity = 0;
-    ColorCount = ptr::null_mut();
+unsafe fn reset_programmatic_run_state() {
+    // LKH globals survive between calls. Reset the fields touched by
+    // ReadParameters, ReadProblem, and the search loop before loading a new
+    // in-memory instance.
+    FreeStructures();
+    FirstNode = ptr::null_mut();
+    Depot = ptr::null_mut();
+    WeightType = -1;
+    WeightFormat = -1;
+    ProblemType = -1;
+    CoordType = CoordTypes_NO_COORDS as i32;
+    Distance = None;
+    OldDistance = None;
+    C = None;
+    D = None;
+    c = None;
     Penalty = None;
+    MergeWithTour = Some(MergeWithTourIPT);
     OptimizePenalty = 0;
     CurrentPenalty = 0;
     CurrentGain = 0;
+    BestCost = PLUS_INFINITY;
+    BestPenalty = PLUS_INFINITY;
     LowerBound = 0.0;
     M = 0;
     Swaps = 0;
     OldSwaps = 0;
-    Serial = 1;
-    RouteNodes = 0;
-    RouteCost = 0;
-    RouteScore = 0;
+    Hash = 0;
+    CacheMask = 0;
     PredSucCostAvailable = 0;
     IsChild = 0;
     Run = 0;
     Trial = 0;
-    Hash = 0;
-    CacheMask = 0;
-    RelaxationLevel = 0;
+    PopulationSize = 0;
+    ColorCount = ptr::null_mut();
+    FirstConstraint = ptr::null_mut();
+    FirstActive = ptr::null_mut();
+    LastActive = ptr::null_mut();
+    FirstSegment = ptr::null_mut();
+    FirstSSegment = ptr::null_mut();
+    Reversed = 0;
+    ParameterFile = ptr::null_mut();
+    ProblemFile = ptr::null_mut();
+    PiFile = ptr::null_mut();
+    InputTourFile = ptr::null_mut();
+    InitialTourFile = ptr::null_mut();
+    SubproblemTourFile = ptr::null_mut();
+    MergeTourFile = ptr::null_mut();
+}
 
-    MergeWithTour = Some(MergeWithTourIPT);
+unsafe fn read_programmatic_parameters(
+    parameters: &SearchParameters,
+    options: &ProgrammaticSolveOptions,
+) -> Result<(), LkhError> {
+    // The public model is filesystem-free. We still render parameter text and
+    // feed it through LKH's unchanged parser so native defaults and keyword
+    // handling remain in one place.
+    let parameter_text = parameters.to_lkh_parameter_file("__lkh_rs_in_memory_problem__")?;
+    let parameter_file = InMemoryFile::new("parameters", parameter_text)?;
+    let parameter_name =
+        CString::new(parameter_file.path()).map_err(|source| LkhError::CString {
+            context: "programmatic parameter path",
+            source,
+        })?;
+    ParameterFileName = parameter_name.as_ptr() as *mut c_char;
+    {
+        let _silencer = StdoutSilencer::new()?;
+        ReadParameters();
+    }
+    ParameterFileName = ptr::null_mut();
+    parameter_file.finish()?;
+    MaxMatrixDimension = options.max_matrix_dimension;
+    if let Some(trace_level) = options.trace_level_override {
+        TraceLevel = trace_level;
+    }
+    MergeWithTour = if Recombination == RecombinationTypes_GPX2 as i32 {
+        Some(MergeWithTourGPX2)
+    } else if Recombination == RecombinationTypes_CLARIST as i32 {
+        Some(MergeWithTourCLARIST)
+    } else {
+        Some(MergeWithTourIPT)
+    };
     Ok(())
 }
 
-unsafe fn initialize_programmatic_problem(problem: &RoutingProblem) -> Result<(), LkhError> {
-    free_and_reset_problem_globals();
-
-    match problem.edge_data() {
-        EdgeData::Euclidean2d(points) => initialize_euclidean_problem(points),
-        EdgeData::ExplicitMatrix { matrix, asymmetric } => {
-            if *asymmetric {
-                initialize_asymmetric_matrix_problem(matrix)
-            } else {
-                initialize_symmetric_matrix_problem(matrix)
-            }
-        }
+unsafe fn read_programmatic_problem(problem: &RoutingProblem) -> Result<(), LkhError> {
+    // Feed generated TSPLIB text through LKH's existing `fopen`-based parser.
+    // On Unix-like native targets the path points at an anonymous pipe under
+    // `/dev/fd`, so no temporary problem file is created.
+    let problem_text = problem.to_tsplib();
+    let problem_file = InMemoryFile::new("problem", problem_text)?;
+    let problem_name = CString::new(problem_file.path()).map_err(|source| LkhError::CString {
+        context: "programmatic problem path",
+        source,
+    })?;
+    ProblemFileName = problem_name.as_ptr() as *mut c_char;
+    {
+        let _silencer = StdoutSilencer::new()?;
+        ReadProblem();
     }
+    ProblemFileName = ptr::null_mut();
+    problem_file.finish()?;
+    Ok(())
 }
 
 unsafe fn free_and_reset_problem_globals() {
@@ -682,343 +877,38 @@ unsafe fn reset_problem_globals() {
     Reversed = 0;
 }
 
-unsafe fn initialize_euclidean_problem(points: &[crate::Point2d]) -> Result<(), LkhError> {
-    let dimension = checked_dimension(points.len())?;
-    Dimension = dimension;
-    DimensionSaved = dimension;
-    Dim = dimension;
-    ProblemType = Types_TSP as i32;
-    WeightType = EdgeWeightTypes_EUC_2D as i32;
-    WeightFormat = EdgeWeightFormats_FUNCTION as i32;
-    CoordType = CoordTypes_TWOD_COORDS as i32;
-    Distance = Some(Distance_EUC_2D);
-    c = Some(c_EUC_2D);
-    Scale = 1;
-
-    allocate_node_ring(dimension)?;
-    for (index, point) in points.iter().enumerate() {
-        let node = NodeSet.add(index + 1);
-        (*node).X = point.x;
-        (*node).Y = point.y;
-        (*node).Z = 0.0;
-    }
-    precompute_symmetric_distance_matrix(dimension)?;
-    finalize_basic_problem()
-}
-
-unsafe fn initialize_symmetric_matrix_problem(matrix: &[Vec<i64>]) -> Result<(), LkhError> {
-    let dimension = checked_dimension(matrix.len())?;
-    Dimension = dimension;
-    DimensionSaved = dimension;
-    Dim = dimension;
-    ProblemType = Types_TSP as i32;
-    WeightType = EdgeWeightTypes_EXPLICIT as i32;
-    WeightFormat = EdgeWeightFormats_FULL_MATRIX as i32;
-    CoordType = CoordTypes_NO_COORDS as i32;
-    Distance = Some(Distance_EXPLICIT);
-    c = None;
-
-    allocate_node_ring(dimension)?;
-    let entries = (dimension as usize)
-        .checked_mul((dimension - 1) as usize)
-        .and_then(|value| value.checked_div(2))
-        .ok_or_else(|| {
-            LkhError::InMemoryInitialization("symmetric matrix is too large".to_owned())
-        })?;
-    CostMatrix = calloc(
-        entries as c_ulong,
-        mem::size_of::<std::os::raw::c_int>() as c_ulong,
-    ) as *mut std::os::raw::c_int;
-    if CostMatrix.is_null() {
-        return Err(LkhError::InMemoryInitialization(
-            "failed to allocate symmetric cost matrix".to_owned(),
-        ));
-    }
-    for i in 2..=dimension {
-        let node = NodeSet.add(i as usize);
-        (*node).C = CostMatrix.add(((i - 1) * (i - 2) / 2) as usize).offset(-1);
-        for j in 1..i {
-            *(*node).C.offset(j as isize) = matrix[(i - 1) as usize][(j - 1) as usize] as i32;
-        }
-    }
-    finalize_basic_problem()
-}
-
-unsafe fn initialize_asymmetric_matrix_problem(matrix: &[Vec<i64>]) -> Result<(), LkhError> {
-    let original_dimension = checked_dimension(matrix.len())?;
-    let transformed_dimension = original_dimension.checked_mul(2).ok_or_else(|| {
-        LkhError::InMemoryInitialization("asymmetric matrix dimension is too large".to_owned())
-    })?;
-    Dimension = transformed_dimension;
-    DimensionSaved = original_dimension;
-    Dim = original_dimension;
-    ProblemType = Types_ATSP as i32;
-    WeightType = -1;
-    WeightFormat = EdgeWeightFormats_FULL_MATRIX as i32;
-    CoordType = CoordTypes_NO_COORDS as i32;
-    Asymmetric = 1;
-    M = max_matrix_entry(matrix).saturating_add(1);
-    Distance = Some(Distance_ATSP);
-    c = None;
-
-    allocate_node_ring(transformed_dimension)?;
-    let entries = (original_dimension as usize)
-        .checked_mul(original_dimension as usize)
-        .ok_or_else(|| {
-            LkhError::InMemoryInitialization("asymmetric matrix is too large".to_owned())
-        })?;
-    CostMatrix = calloc(
-        entries as c_ulong,
-        mem::size_of::<std::os::raw::c_int>() as c_ulong,
-    ) as *mut std::os::raw::c_int;
-    if CostMatrix.is_null() {
-        return Err(LkhError::InMemoryInitialization(
-            "failed to allocate asymmetric cost matrix".to_owned(),
-        ));
-    }
-    for i in 1..=original_dimension {
-        let node = NodeSet.add(i as usize);
-        (*node).C = CostMatrix
-            .add(((i - 1) * original_dimension) as usize)
-            .offset(-1);
-        for j in 1..=original_dimension {
-            *(*node).C.offset(j as isize) = matrix[(i - 1) as usize][(j - 1) as usize] as i32;
-        }
-    }
-    for i in 1..=original_dimension {
-        let first = NodeSet.add(i as usize);
-        let second = NodeSet.add((i + original_dimension) as usize);
-        if !fix_edge(first, second) {
-            return Err(LkhError::InMemoryInitialization(
-                "failed to fix asymmetric split-node edge".to_owned(),
-            ));
-        }
-    }
-    finalize_basic_problem()
-}
-
-unsafe fn precompute_symmetric_distance_matrix(dimension: i32) -> Result<(), LkhError> {
-    if dimension > MaxMatrixDimension || Distance.is_none() {
-        return Ok(());
-    }
-    let entries = (dimension as usize)
-        .checked_mul((dimension - 1) as usize)
-        .and_then(|value| value.checked_div(2))
-        .ok_or_else(|| {
-            LkhError::InMemoryInitialization("symmetric matrix is too large".to_owned())
-        })?;
-    CostMatrix = calloc(
-        entries as c_ulong,
-        mem::size_of::<std::os::raw::c_int>() as c_ulong,
-    ) as *mut std::os::raw::c_int;
-    if CostMatrix.is_null() {
-        return Err(LkhError::InMemoryInitialization(
-            "failed to allocate symmetric cost matrix".to_owned(),
-        ));
-    }
-    let distance = Distance.expect("distance function checked above");
-    for i in 2..=dimension {
-        let node = NodeSet.add(i as usize);
-        (*node).C = CostMatrix.add(((i - 1) * (i - 2) / 2) as usize).offset(-1);
-        for j in 1..i {
-            let other = NodeSet.add(j as usize);
-            *(*node).C.offset(j as isize) = distance(node, other);
-        }
-    }
-    c = None;
-    WeightType = EdgeWeightTypes_EXPLICIT as i32;
-    C = Some(C_EXPLICIT);
-    D = Some(D_EXPLICIT);
-    Ok(())
-}
-
-unsafe fn allocate_node_ring(dimension: i32) -> Result<(), LkhError> {
-    let count = (dimension as usize)
-        .checked_add(1)
-        .ok_or_else(|| LkhError::InMemoryInitialization("dimension is too large".to_owned()))?;
-    NodeSet = calloc(count as c_ulong, mem::size_of::<Node>() as c_ulong) as *mut Node;
-    if NodeSet.is_null() {
-        return Err(LkhError::InMemoryInitialization(
-            "failed to allocate node set".to_owned(),
-        ));
-    }
-
-    for i in 1..=dimension {
-        let node = NodeSet.add(i as usize);
-        (*node).Id = i;
-        (*node).OriginalId = i;
-        (*node).Earliest = 0.0;
-        (*node).Latest = i32::MAX as f64;
-        (*node).ServiceTime = 0.0;
-        if i == 1 {
-            FirstNode = node;
-        }
-        let pred = if i == 1 {
-            NodeSet.add(dimension as usize)
+unsafe fn run_lkh_search(mut last_time: f64) -> Result<SolveReport, LkhError> {
+    if SubproblemSize > 0 {
+        if DelaunayPartitioning != 0 {
+            SolveDelaunaySubproblems();
+        } else if KarpPartitioning != 0 {
+            SolveKarpSubproblems();
+        } else if KCenterPartitioning != 0 {
+            SolveKCenterSubproblems();
+        } else if KMeansPartitioning != 0 {
+            SolveKMeansSubproblems();
+        } else if RohePartitioning != 0 {
+            SolveRoheSubproblems();
+        } else if MoorePartitioning != 0 || SierpinskiPartitioning != 0 {
+            SolveSFCSubproblems();
         } else {
-            NodeSet.add((i - 1) as usize)
-        };
-        let suc = if i == dimension {
-            NodeSet.add(1)
-        } else {
-            NodeSet.add((i + 1) as usize)
-        };
-        (*node).Pred = pred;
-        (*node).Suc = suc;
-    }
-    Ok(())
-}
-
-unsafe fn finalize_basic_problem() -> Result<(), LkhError> {
-    Depot = NodeSet.add(MTSPDepot as usize);
-    if !Depot.is_null() {
-        (*Depot).DepotId = 1;
-    }
-
-    if Scale < 1 {
-        Scale = 1;
-    }
-    if Precision == 0 {
-        Precision = 100;
-    }
-    if InitialStepSize == 0 {
-        InitialStepSize = 1;
-    }
-    if MaxSwaps < 0 {
-        MaxSwaps = Dimension;
-    }
-    if KickType > Dimension / 2 {
-        KickType = Dimension / 2;
-    }
-    if MaxCandidates > Dimension - 1 {
-        MaxCandidates = Dimension - 1;
-    }
-    if ExtraCandidates > Dimension - 1 {
-        ExtraCandidates = Dimension - 1;
-    }
-    if SubproblemSize >= Dimension {
-        SubproblemSize = Dimension;
-    } else if SubproblemSize == 0 {
-        if AscentCandidates > Dimension - 1 {
-            AscentCandidates = Dimension - 1;
+            SolveTourSegmentSubproblems();
         }
-        if InitialPeriod < 0 {
-            InitialPeriod = Dimension / 2;
-            if InitialPeriod < 100 {
-                InitialPeriod = 100;
-            }
-        }
-        if Excess < 0.0 {
-            Excess = Salesmen as f64 / DimensionSaved as f64;
-        }
-        if MaxTrials == -1 {
-            MaxTrials = Dimension;
-        }
+        return report_from_globals();
     }
-    if POPMUSIC_MaxNeighbors > Dimension - 1 {
-        POPMUSIC_MaxNeighbors = Dimension - 1;
-    }
-    if POPMUSIC_SampleSize > Dimension {
-        POPMUSIC_SampleSize = Dimension;
-    }
-    if MTSPMaxSize == -1 {
-        MTSPMaxSize = Dimension - 1;
-    }
-
-    if SubsequentMoveType == 0 {
-        SubsequentMoveType = MoveType;
-        SubsequentMoveTypeSpecial = MoveTypeSpecial;
-    }
-    k = if MoveType >= SubsequentMoveType || SubsequentPatching == 0 {
-        MoveType
-    } else {
-        SubsequentMoveType
-    };
-    if PatchingC > k {
-        PatchingC = k;
-    }
-    if PatchingA > 1 && PatchingA >= PatchingC {
-        PatchingA = if PatchingC > 2 { PatchingC - 1 } else { 1 };
-    }
-    if NonsequentialMoveType == -1 || NonsequentialMoveType > k + PatchingC + PatchingA - 1 {
-        NonsequentialMoveType = k + PatchingC + PatchingA - 1;
-    }
-    configure_move_functions();
-    C = if WeightType == EdgeWeightTypes_EXPLICIT as i32 {
-        Some(C_EXPLICIT)
-    } else {
-        Some(C_FUNCTION)
-    };
-    D = if WeightType == EdgeWeightTypes_EXPLICIT as i32 {
-        Some(D_EXPLICIT)
-    } else {
-        Some(D_FUNCTION)
-    };
-    Ok(())
-}
-
-unsafe fn fix_edge(a: *mut Node, b: *mut Node) -> bool {
-    if (*a).FixedTo1.is_null() || ptr::eq((*a).FixedTo1, b) {
-        (*a).FixedTo1 = b;
-    } else if (*a).FixedTo2.is_null() || ptr::eq((*a).FixedTo2, b) {
-        (*a).FixedTo2 = b;
-    } else {
-        return false;
-    }
-    if (*b).FixedTo1.is_null() || ptr::eq((*b).FixedTo1, a) {
-        (*b).FixedTo1 = a;
-    } else if (*b).FixedTo2.is_null() || ptr::eq((*b).FixedTo2, a) {
-        (*b).FixedTo2 = a;
-    } else {
-        return false;
-    }
-    true
-}
-
-unsafe fn configure_move_functions() {
-    if PatchingC >= 1 {
-        BestMove = Some(BestKOptMove);
-        BestSubsequentMove = Some(BestKOptMove);
-        if SubsequentPatching == 0 && SubsequentMoveType <= 5 {
-            BestSubsequentMove = opt_move(SubsequentMoveType);
-        }
-    } else {
-        BestMove = if MoveType <= 5 {
-            opt_move(MoveType)
-        } else {
-            Some(BestKOptMove)
-        };
-        BestSubsequentMove = if SubsequentMoveType <= 5 {
-            opt_move(SubsequentMoveType)
-        } else {
-            Some(BestKOptMove)
-        };
-    }
-    if MoveTypeSpecial != 0 {
-        BestMove = Some(BestSpecialOptMove);
-    }
-    if SubsequentMoveTypeSpecial != 0 {
-        BestSubsequentMove = Some(BestSpecialOptMove);
-    }
-}
-
-unsafe fn opt_move(move_type: i32) -> MoveFunction {
-    match move_type {
-        2 => Some(Best2OptMove),
-        3 => Some(Best3OptMove),
-        4 => Some(Best4OptMove),
-        5 => Some(Best5OptMove),
-        _ => None,
-    }
-}
-
-unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
-    let mut last_time = GetTime();
-    StartTime = last_time;
 
     AllocateStructures();
     let _structures = StructureGuard::enabled();
 
+    if ProblemType == Types_TSPTW as i32 {
+        TSPTW_Reduce();
+    }
+    if ProblemType == Types_VRPB as i32 || ProblemType == Types_VRPBTW as i32 {
+        VRPB_Reduce();
+    }
+    if ProblemType == Types_PDPTW as i32 {
+        PDPTW_Reduce();
+    }
     CreateCandidateSet();
     InitializeStatistics();
 
@@ -1058,15 +948,57 @@ unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
         if MaxPopulationSize > 1 && TSPTW_Makespan == 0 {
             let mut i = 0;
             while i < PopulationSize {
+                let old_penalty: GainType = CurrentPenalty;
+                let old_cost: GainType = cost;
                 cost = MergeTourWithIndividual(i);
+                if TraceLevel >= 1
+                    && (CurrentPenalty < old_penalty
+                        || (CurrentPenalty == old_penalty && cost < old_cost))
+                {
+                    if CurrentPenalty != 0 {
+                        print!(
+                            "  Merged with {}: Cost = {}_{}",
+                            i + 1,
+                            CurrentPenalty,
+                            cost
+                        );
+                    } else {
+                        print!("  Merged with {}: Cost = {}", i + 1, cost);
+                    }
+                    if Optimum != MINUS_INFINITY && Optimum != 0 {
+                        if OptimizePenalty != 0 {
+                            let sign = if ProblemType == Types_MSCTSP as i32 {
+                                -1.0
+                            } else {
+                                1.0
+                            };
+                            print!(
+                                ", Gap = {:0.4}%",
+                                sign * (CurrentPenalty - Optimum) as f64 / Optimum as f64 * 100.0
+                            );
+                        } else {
+                            print!(
+                                ", Gap = {:0.4}%",
+                                (cost - Optimum) as f64 / Optimum as f64 * 100.0
+                            );
+                        }
+                    }
+                    print!("\n");
+                }
                 i += 1;
             }
             if HasFitness(CurrentPenalty, cost) == 0 {
                 if PopulationSize < MaxPopulationSize {
                     AddToPopulation(CurrentPenalty, cost);
+                    if TraceLevel >= 1 {
+                        PrintPopulation();
+                    }
                 } else if smaller_fitness(CurrentPenalty, cost, (PopulationSize - 1) as isize) {
                     let replacement = ReplacementIndividual(CurrentPenalty, cost);
                     ReplaceIndividualWithTour(replacement, CurrentPenalty, cost);
+                    if TraceLevel >= 1 {
+                        PrintPopulation();
+                    }
                 }
             }
         } else if Run > 1 && TSPTW_Makespan == 0 {
@@ -1089,6 +1021,9 @@ unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
             Optimum = CurrentPenalty;
         }
         if Optimum < old_optimum && !FirstNode.is_null() && !(*FirstNode).InputSuc.is_null() {
+            if TraceLevel >= 1 {
+                print!("*** New OPTIMUM = {:#?} ***\n", Optimum);
+            }
             let first_node_ptr = FirstNode;
             let mut current = FirstNode;
             loop {
@@ -1102,6 +1037,12 @@ unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
         }
 
         UpdateStatistics(cost, fabs(GetTime() - last_time));
+        if TraceLevel >= 1 && cost != PLUS_INFINITY {
+            print!("Run {}: ", Run);
+            let empty = CString::new("").unwrap();
+            StatusReport(cost, last_time, empty.as_ptr() as *mut c_char);
+            print!("\n");
+        }
         if StopAtOptimum != 0 && MaxPopulationSize >= 1 {
             let optimum_reached = if OptimizePenalty != 0 {
                 CurrentPenalty == Optimum
@@ -1111,6 +1052,42 @@ unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
             if optimum_reached {
                 Runs = Run;
                 break;
+            }
+        }
+
+        IsChild = 0;
+        if PopulationSize >= 2
+            && (PopulationSize == MaxPopulationSize || Run >= 2 * MaxPopulationSize)
+            && Run < Runs
+        {
+            let parent1 = LinearSelection(PopulationSize, 1.25);
+            let mut parent2;
+            loop {
+                parent2 = LinearSelection(PopulationSize, 1.25);
+                if parent2 != parent1 {
+                    break;
+                }
+            }
+
+            ApplyCrossover(parent1, parent2);
+            IsChild = 1;
+
+            let first_node_ptr = FirstNode;
+            let mut current = FirstNode;
+            loop {
+                if ProblemType != Types_HCP as i32 && ProblemType != Types_HPP as i32 {
+                    let d = C.unwrap()(current, (*current).Suc);
+                    AddCandidate(current, (*current).Suc, d, i32::MAX);
+                    AddCandidate((*current).Suc, current, d, i32::MAX);
+                }
+
+                let next = (*current).Suc;
+                (*current).InitialSuc = (*current).Suc;
+                current = next;
+
+                if ptr::eq(current, first_node_ptr) {
+                    break;
+                }
             }
         }
 
@@ -1125,31 +1102,78 @@ unsafe fn run_lkh_search() -> Result<SolveReport, LkhError> {
     if TraceLevel >= 1 {
         PrintStatistics();
     }
+
+    if Salesmen > 1 {
+        if Dimension == DimensionSaved {
+            for i in 1..=Dimension {
+                let n = NodeSet.add(*BestTour.add((i - 1) as usize) as usize);
+                let next = NodeSet.add(*BestTour.add(i as usize) as usize);
+                (*n).Suc = next;
+                (*next).Pred = n;
+            }
+        } else {
+            for i in 1..=DimensionSaved {
+                let n1 = NodeSet.add(*BestTour.add((i - 1) as usize) as usize);
+                let n2 = NodeSet.add(*BestTour.add(i as usize) as usize);
+                let m1 = NodeSet.add(((*n1).Id + DimensionSaved) as usize);
+                let m2 = NodeSet.add(((*n2).Id + DimensionSaved) as usize);
+
+                (*m1).Suc = n1;
+                (*n1).Pred = m1;
+
+                (*n1).Suc = m2;
+                (*m2).Pred = n1;
+
+                (*m2).Suc = n2;
+                (*n2).Pred = m2;
+            }
+        }
+        CurrentPenalty = BestPenalty;
+        if TraceLevel >= 1 {
+            MTSP_Report(BestPenalty, BestCost);
+        }
+    }
+
+    if TraceLevel >= 1 && should_report_special_solution() {
+        CurrentPenalty = BestPenalty;
+        SOP_Report(BestCost);
+    }
     report_from_globals()
 }
 
-fn validate_programmatic_parameters(parameters: &SearchParameters) -> Result<(), LkhError> {
-    if !parameters.additional_parameters.is_empty() {
-        return Err(LkhError::UnsupportedProgrammaticParameter(
-            "additional_parameters during in-memory solve; use typed fields or export the parameter file"
-                .to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-fn checked_dimension(dimension: usize) -> Result<i32, LkhError> {
-    i32::try_from(dimension)
-        .map_err(|_| LkhError::InMemoryInitialization("dimension exceeds i32::MAX".to_owned()))
-}
-
-fn max_matrix_entry(matrix: &[Vec<i64>]) -> i32 {
-    matrix
-        .iter()
-        .flat_map(|row| row.iter())
-        .copied()
-        .max()
-        .unwrap_or(0) as i32
+unsafe fn should_report_special_solution() -> bool {
+    ProblemType == Types_ACVRP as i32
+        || ProblemType == Types_BWTSP as i32
+        || ProblemType == Types_CCVRP as i32
+        || ProblemType == Types_CTSP as i32
+        || ProblemType == Types_CVRP as i32
+        || ProblemType == Types_CVRPTW as i32
+        || ProblemType == Types_GCTSP as i32
+        || ProblemType == Types_CCCTSP as i32
+        || ProblemType == Types_MLP as i32
+        || ProblemType == Types_MSCTSP as i32
+        || ProblemType == Types_M_PDTSP as i32
+        || ProblemType == Types_M1_PDTSP as i32
+        || MTSPObjective != -1
+        || ProblemType == Types_ONE_PDTSP as i32
+        || ProblemType == Types_OP as i32
+        || ProblemType == Types_OVRP as i32
+        || ProblemType == Types_PCTSP as i32
+        || ProblemType == Types_PC_TSP as i32
+        || ProblemType == Types_PDTSP as i32
+        || ProblemType == Types_PDTSPL as i32
+        || ProblemType == Types_PDPTW as i32
+        || ProblemType == Types_PTSP as i32
+        || ProblemType == Types_PTP as i32
+        || ProblemType == Types_RCTVRP as i32
+        || ProblemType == Types_RCTVRPTW as i32
+        || ProblemType == Types_SOP as i32
+        || ProblemType == Types_TRP as i32
+        || ProblemType == Types_TSPMD as i32
+        || ProblemType == Types_TSPTW as i32
+        || ProblemType == Types_VRPB as i32
+        || ProblemType == Types_VRPBTW as i32
+        || ProblemType == Types_VRPPD as i32
 }
 
 unsafe fn report_from_globals() -> Result<SolveReport, LkhError> {

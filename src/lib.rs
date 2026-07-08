@@ -71,7 +71,7 @@ mod python;
 
 pub use error::LkhError;
 #[cfg(not(feature = "demo"))]
-pub use problem::{Point2d, ProblemKind, RoutingProblem, SearchParameters};
+pub use problem::{Point2d, ProblemEntry, ProblemKind, RoutingProblem, SearchParameters};
 #[cfg(not(feature = "demo"))]
 pub use solver::{
     solve_parameter_file, solve_problem, solve_problem_with_options, solve_with_options,

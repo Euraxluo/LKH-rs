@@ -25,7 +25,13 @@ Those constraints do not map cleanly to `wasm32-unknown-unknown` browser modules
 For now, the `wasm-experimental` feature documents this evaluation status; it does not claim browser deployment support.
 
 The programmatic `RoutingProblem` and `SearchParameters` API is designed around
-in-memory data rather than file paths. Native `solve_problem` initializes LKH
-directly from that model instead of writing temporary problem files. A
-browser-oriented Wasm backend should preserve the same public model while
-replacing the remaining native C runtime assumptions listed above.
+in-memory data rather than file paths. It is generic over LKH problem types:
+callers provide a `TYPE`, scalar keywords, and raw sections, with convenience
+builders layered on top for common TSP inputs. Native `solve_problem` renders
+that model to in-memory LKH/TSPLIB text and feeds the existing parser without
+creating temporary files.
+
+On Unix-like native targets this currently uses C memory streams internally to
+reuse LKH's parser. A browser-oriented Wasm backend should keep the same public
+model while replacing the remaining `FILE*`, stdout/stderr, and `exit()` runtime
+assumptions listed above.

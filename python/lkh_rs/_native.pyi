@@ -1,35 +1,32 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Dict, List, TypedDict, Union
 
 class SolveReport(TypedDict):
     best_cost: int
     best_penalty: int
     runs: int
     dimension: int
-    tour: list[int]
+    tour: List[int]
+
+class ProblemData(TypedDict):
+    kind: str
+    dimension: int
+    name: str
+    keywords: Dict[str, str]
+    sections: Dict[str, List[str]]
+
+class SearchParameterData(TypedDict, total=False):
+    runs: int
+    trace_level: int
+    max_trials: int
+    seed: int
+    time_limit: float
+    total_time_limit: float
 
 def solve_parameter_file(path: str) -> SolveReport: ...
 
-def solve_euclidean_2d(
-    points: list[tuple[float, float]],
-    *,
-    runs: int = 1,
-    trace_level: int = 0,
-    max_trials: int | None = None,
-    seed: int | None = None,
-    time_limit: float | None = None,
-    total_time_limit: float | None = None,
-) -> SolveReport: ...
-
-def solve_distance_matrix(
-    matrix: list[list[int]],
-    *,
-    asymmetric: bool = False,
-    runs: int = 1,
-    trace_level: int = 0,
-    max_trials: int | None = None,
-    seed: int | None = None,
-    time_limit: float | None = None,
-    total_time_limit: float | None = None,
+def _solve_problem_data(
+    problem: ProblemData,
+    parameters: SearchParameterData,
 ) -> SolveReport: ...

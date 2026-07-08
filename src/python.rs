@@ -1,6 +1,13 @@
+//! Private PyO3 bridge for the public Python facade.
+//!
+//! `python/lkh_rs/__init__.py` owns the user-facing enums and builders. This
+//! module accepts already-normalized dictionaries so the native layer stays
+//! small and mirrors the safe Rust API.
+
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3::Bound;
 
 #[pymodule]
 mod _native {
@@ -13,57 +20,13 @@ mod _native {
     }
 
     #[pyfunction]
-    #[pyo3(signature = (points, *, runs=1, trace_level=0, max_trials=None, seed=None, time_limit=None, total_time_limit=None))]
-    fn solve_euclidean_2d(
+    fn _solve_problem_data(
         py: Python<'_>,
-        points: Vec<(f64, f64)>,
-        runs: i32,
-        trace_level: i32,
-        max_trials: Option<i32>,
-        seed: Option<u32>,
-        time_limit: Option<f64>,
-        total_time_limit: Option<f64>,
+        problem: Bound<'_, PyDict>,
+        parameters: Bound<'_, PyDict>,
     ) -> PyResult<Py<PyDict>> {
-        let problem = crate::RoutingProblem::euclidean_2d(points).map_err(to_py_error)?;
-        let parameters = search_parameters(
-            runs,
-            trace_level,
-            max_trials,
-            seed,
-            time_limit,
-            total_time_limit,
-        )?;
-        let report = crate::solve_problem(&problem, &parameters).map_err(to_py_error)?;
-        report_to_dict(py, report)
-    }
-
-    #[pyfunction]
-    #[pyo3(signature = (matrix, *, asymmetric=false, runs=1, trace_level=0, max_trials=None, seed=None, time_limit=None, total_time_limit=None))]
-    fn solve_distance_matrix(
-        py: Python<'_>,
-        matrix: Vec<Vec<i64>>,
-        asymmetric: bool,
-        runs: i32,
-        trace_level: i32,
-        max_trials: Option<i32>,
-        seed: Option<u32>,
-        time_limit: Option<f64>,
-        total_time_limit: Option<f64>,
-    ) -> PyResult<Py<PyDict>> {
-        let problem = if asymmetric {
-            crate::RoutingProblem::asymmetric_distance_matrix(matrix)
-        } else {
-            crate::RoutingProblem::distance_matrix(matrix)
-        }
-        .map_err(to_py_error)?;
-        let parameters = search_parameters(
-            runs,
-            trace_level,
-            max_trials,
-            seed,
-            time_limit,
-            total_time_limit,
-        )?;
+        let problem = routing_problem_from_dict(problem)?;
+        let parameters = search_parameters_from_dict(parameters)?;
         let report = crate::solve_problem(&problem, &parameters).map_err(to_py_error)?;
         report_to_dict(py, report)
     }
@@ -78,31 +41,75 @@ mod _native {
         Ok(dict.into())
     }
 
-    fn search_parameters(
-        runs: i32,
-        trace_level: i32,
-        max_trials: Option<i32>,
-        seed: Option<u32>,
-        time_limit: Option<f64>,
-        total_time_limit: Option<f64>,
-    ) -> PyResult<crate::SearchParameters> {
+    fn routing_problem_from_dict(input: Bound<'_, PyDict>) -> PyResult<crate::RoutingProblem> {
+        // Python preserves insertion order for dictionaries, so iterating these
+        // mappings keeps raw sections in the order chosen by the public facade.
+        let kind = required_item::<String>(&input, "kind")?;
+        let dimension = required_item::<usize>(&input, "dimension")?;
+        let name =
+            optional_item::<String>(&input, "name")?.unwrap_or_else(|| "lkh_rs_problem".to_owned());
+        let mut routing_problem =
+            crate::RoutingProblem::custom_type(name, kind, dimension).map_err(to_py_error)?;
+        if let Some(keywords) = optional_dict(&input, "keywords")? {
+            for (key, value) in keywords.iter() {
+                let key = key.extract::<String>()?;
+                let value = value.extract::<String>()?;
+                routing_problem = routing_problem
+                    .with_keyword(key, value)
+                    .map_err(to_py_error)?;
+            }
+        }
+        if let Some(sections) = optional_dict(&input, "sections")? {
+            for (key, lines) in sections.iter() {
+                let key = key.extract::<String>()?;
+                let lines = lines.extract::<Vec<String>>()?;
+                routing_problem = routing_problem
+                    .with_section(key, lines)
+                    .map_err(to_py_error)?;
+            }
+        }
+        Ok(routing_problem)
+    }
+
+    fn search_parameters_from_dict(input: Bound<'_, PyDict>) -> PyResult<crate::SearchParameters> {
+        // The Python facade performs early validation. We still validate the
+        // Rust value before handing it to LKH so direct bridge calls fail
+        // consistently.
         let mut parameters = crate::SearchParameters::new()
-            .with_runs(runs)
-            .with_trace_level(trace_level);
-        if let Some(max_trials) = max_trials {
-            parameters.max_trials = Some(max_trials);
-        }
-        if let Some(seed) = seed {
-            parameters.seed = Some(seed);
-        }
-        if let Some(time_limit) = time_limit {
-            parameters.time_limit = Some(time_limit);
-        }
-        if let Some(total_time_limit) = total_time_limit {
-            parameters.total_time_limit = Some(total_time_limit);
-        }
+            .with_runs(optional_item::<i32>(&input, "runs")?.unwrap_or(1))
+            .with_trace_level(optional_item::<i32>(&input, "trace_level")?.unwrap_or(0));
+        parameters.max_trials = optional_item(&input, "max_trials")?;
+        parameters.seed = optional_item(&input, "seed")?;
+        parameters.time_limit = optional_item(&input, "time_limit")?;
+        parameters.total_time_limit = optional_item(&input, "total_time_limit")?;
         parameters.validate().map_err(to_py_error)?;
         Ok(parameters)
+    }
+
+    fn required_item<T>(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<T>
+    where
+        for<'a> T: FromPyObject<'a>,
+    {
+        dict.get_item(key)?
+            .ok_or_else(|| PyValueError::new_err(format!("missing problem field: {key}")))?
+            .extract()
+    }
+
+    fn optional_item<T>(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<T>>
+    where
+        for<'a> T: FromPyObject<'a>,
+    {
+        dict.get_item(key)?.map(|value| value.extract()).transpose()
+    }
+
+    fn optional_dict<'py>(
+        dict: &Bound<'py, PyDict>,
+        key: &str,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
+        Ok(dict
+            .get_item(key)?
+            .map(|value| value.downcast_into::<PyDict>())
+            .transpose()?)
     }
 
     fn to_py_error(err: crate::LkhError) -> PyErr {
