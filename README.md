@@ -229,14 +229,6 @@ Overall, LKH-rs uses Rust language features to minimize the unsafe code that app
 
 We welcome **bug reports**, **feature requests**, and other contributions from the community.
 
-## Change log
+## Changelog
 
-### Version 0.1.0
-
-This is the first public release of the Rust bindings for the LKH library. Key highlights:
-
-- Builds LKH C sources with `cc` and generates Rust bindings with bindgen.
-- Supports Windows, Linux, and macOS native builds through platform-specific build configuration.
-- Provides a safe parameter-file API that wraps LKH's global-state solver behind a serialized Rust boundary.
-- Provides raw FFI access behind the explicit `unsafe-ffi` feature.
-- Includes Python/maturin scaffolding, examples, tests, and documentation for safety, performance, and WebAssembly evaluation.
+See [CHANGELOG.md](CHANGELOG.md).
