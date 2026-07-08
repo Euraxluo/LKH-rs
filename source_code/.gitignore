@@ -1,1 +1,7 @@
 *
+!LKH-3.0.14/
+!LKH-3.0.14/**
+!LKHWin-3.0.9/
+!LKHWin-3.0.9/**
+!wrapper.h
+!.gitignore

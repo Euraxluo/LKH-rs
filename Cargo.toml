@@ -1,24 +1,23 @@
 [package]
-name = "LKH-rs"
+name = "lkh-rs"
 version = "0.1.0"
 authors = ["Euraxluo <euraxluo@outlook.com>"]
 edition = "2021"
 build = "build.rs"
-description = "The rust binding created for the LKH3"
+description = "Rust bindings and safe wrappers for the LKH3 heuristic solver"
 readme = "README.md"
 repository = "https://github.com/Euraxluo/LKH-rs"
-
+license = "MIT"
+keywords = ["tsp", "lkh", "optimization", "ffi"]
+categories = ["algorithms", "api-bindings"]
 
 [[bin]]
-name="main"
-path="src/main.rs"
+name = "lkh"
+path = "src/main.rs"
 
 [lib]
-name = "LKH"
-crate-type = ["rlib"]
-
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+name = "lkh_rs"
+crate-type = ["rlib", "cdylib"]
 
 [build-dependencies]
 bindgen = "0.66.1"
@@ -35,7 +34,12 @@ dunce = "1.0.4"
 env_logger = "0.10.0"
 log = "0.4.19"
 pathdiff = "0.2.1"
-
+thiserror = "1.0"
+pyo3 = { version = ">=0.24.1, <0.30", optional = true, features = ["abi3-py38"] }
 
 [features]
+default = []
 demo = []
+unsafe-ffi = []
+python = ["dep:pyo3"]
+wasm-experimental = []

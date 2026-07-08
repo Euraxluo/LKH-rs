@@ -1,0 +1,7 @@
+PROBLEM_FILE = tests/fixtures/tiny.tsp
+OPTIMUM = 4
+MOVE_TYPE = 2
+PATCHING_C = 0
+PATCHING_A = 0
+RUNS = 1
+TRACE_LEVEL = 0

@@ -92,28 +92,21 @@ impl Config {
             .matched_path_or_any_parents(path, path.is_dir())
             .is_ignore()
     }
+
     // path normalize
     fn normalize_paths(&mut self) {
         let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is not set"));
         log!("cargo_path:{:#?}", cargo_path);
+        self.generate_wrapper_header = Some(self.generate_wrapper_header.unwrap_or(true));
         self.lkh_home = path_to_string(Path::new(&self.lkh_home), &cargo_path, true);
-        self.lkh_obj_dir = match &self.lkh_obj_dir {
-            Some(dir) => Some(path_to_string(Path::new(&dir), &cargo_path, true)),
-            _ => Some(
-                env::var_os("OUT_DIR")
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            ),
-        };
+        self.lkh_obj_dir = Some(path_to_string(&out_dir, &cargo_path, true));
         self.lkh_src_dir = path_to_string(Path::new(&self.lkh_src_dir), &cargo_path, true);
         self.lkh_header_dir = path_to_string(Path::new(&self.lkh_header_dir), &cargo_path, true);
-        self.lkh_wrapper_header =
-            path_to_string(Path::new(&self.lkh_wrapper_header), &cargo_path, true);
-        self.generate_wrapper_header = match self.generate_wrapper_header {
-            Some(flag) => Some(flag),
-            _ => Some(true),
+        self.lkh_wrapper_header = if self.generate_wrapper_header.unwrap() {
+            path_buf_to_string(out_dir.join("wrapper.h"), true)
+        } else {
+            path_to_string(Path::new(&self.lkh_wrapper_header), &cargo_path, true)
         };
     }
 
@@ -177,42 +170,33 @@ fn parse_config() -> Config {
     let mut config: Config = serde_yaml::from_str(&config_string)
         .unwrap_or_else(|e| panic!("Unable to parse {} file: {}", CONFIG_FILE, e));
     config.normalize_paths();
+    let headers = config.get_headers();
+    let sources = config.get_sources();
+    for path in headers.iter().chain(sources.iter()) {
+        println!("cargo:rerun-if-changed={}", path);
+    }
+    if !config.generate_wrapper_header.unwrap() {
+        println!("cargo:rerun-if-changed={}", config.lkh_wrapper_header);
+    }
     // log config to terminal
     log!("LKH-BUILD configuration {} :: {:#?}", CONFIG_FILE, config);
-    log!(
-        "LKH-BUILD headers {:?} {:#?}",
-        config.get_headers().len(),
-        config.get_headers()
-    );
-    log!(
-        "LKH-BUILD sources {:?} {:#?}",
-        config.get_sources().len(),
-        config.get_sources()
-    );
+    log!("LKH-BUILD headers {:?} {:#?}", headers.len(), headers);
+    log!("LKH-BUILD sources {:?} {:#?}", sources.len(), sources);
     config
 }
 
 // path to relative path
 fn path_to_string(path: &Path, base: &Path, to_unix: bool) -> String {
-    if fs::metadata(path).is_err() {
-        log!("path_to_string: path:{:?} base:{:#?}", path, base);
-        if path.to_path_buf().extension() == None {
-            fs::create_dir_all(path).unwrap();
-        } else {
-            fs::File::create(path).unwrap();
-        }
-    }
-    let path1 = dunce::canonicalize(path).expect("path not found,can not canonicalize");
-    let path2 = dunce::canonicalize(base).expect("path not found,can not canonicalize");
-    let mut relative = Path::new(&path1)
-        .strip_prefix(&path2)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
-    if to_unix {
-        relative = relative.replace("\\", "/");
-    }
+    let path1 = dunce::canonicalize(path)
+        .unwrap_or_else(|e| panic!("path {:?} not found, can not canonicalize: {}", path, e));
+    let path2 = dunce::canonicalize(base).unwrap_or_else(|e| {
+        panic!(
+            "base path {:?} not found, can not canonicalize: {}",
+            base, e
+        )
+    });
+    let output = path1.strip_prefix(&path2).unwrap_or(&path1).to_path_buf();
+    let relative = path_buf_to_string(output, to_unix);
     log!(
         "path1:{:?} to relative_path:{:?} with path2:{:#?}",
         path1,
@@ -220,6 +204,14 @@ fn path_to_string(path: &Path, base: &Path, to_unix: bool) -> String {
         path2
     );
     relative
+}
+
+fn path_buf_to_string(path: PathBuf, to_unix: bool) -> String {
+    let mut path = path.to_str().unwrap().to_string();
+    if to_unix {
+        path = path.replace('\\', "/");
+    }
+    path
 }
 
 // scan header and gen wrapper header
@@ -242,6 +234,9 @@ fn wrapper_header_build(config: &Config) {
 
     // create wrapper file path
     let wrapper_file_path = Path::new(&config.lkh_wrapper_header);
+    if let Some(parent) = wrapper_file_path.parent() {
+        fs::create_dir_all(parent).expect("create wrapper header dir failed");
+    }
     let mut file = match File::create(&wrapper_file_path) {
         Err(why) => panic!("couldn't create {}: {:?}", config.lkh_wrapper_header, why),
         Ok(file) => file,
@@ -305,10 +300,9 @@ fn generate_bindings(config: &Config) {
         .parse_callbacks(Box::new(ignored_macros))
         .generate()
         .expect("Unable to generate bindings");
-    // Write the bindings to the CARGO_MANIFEST_DIR/src/bindings.rs file.
-    let lkh_bind = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("bindings.rs");
+    // Write the bindings to OUT_DIR so the source tree stays read-only during builds.
+    let lkh_bind =
+        PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is not set")).join("bindings.rs");
     bindings
         .write_to_file(lkh_bind)
         .expect("Couldn't write bindings!");

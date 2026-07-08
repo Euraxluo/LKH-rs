@@ -1,82 +1,134 @@
-[![Build status](https://github.com/Euraxluo/LKH-rs/workflows/rust-build/badge.svg)](#)
+[![CI](https://github.com/Euraxluo/LKH-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Euraxluo/LKH-rs/actions/workflows/ci.yml)
 
 # LKH-rs
-The binding created for the LKH3(Keld Helsgaun HomePage:http://webhotel4.ruc.dk/~keld/research/)
+
+Rust bindings and safe wrappers for [LKH3](http://webhotel4.ruc.dk/~keld/research/), Keld Helsgaun's heuristic solver for **TSP (traveling salesperson problems)** and related routing problems.
+
+The crate builds the vendored LKH C sources with `cc`, generates Rust bindings with `bindgen`, and exposes a small safe Rust API for solving existing LKH parameter files.
 
 ## Requirements
-This page lists the requirements for running bindgen and how to get them.
 
-### rust-bindgen
-https://rust-lang.github.io/rust-bindgen/requirements.html
+The build uses `bindgen`, so your system needs a working Clang/libclang installation. See the [rust-bindgen requirements](https://rust-lang.github.io/rust-bindgen/requirements.html).
 
-## Building the project
+## Building
+
 ```bash
 git clone https://github.com/Euraxluo/LKH-rs
 cd LKH-rs
 cargo build
 ```
 
-### Windows/Ubuntu/Debian/Osx
+For verbose platform diagnostics:
+
 ```bash
 cargo build --vv
 ```
 
-### Use the LKH-rs
+## CLI usage
+
+Run the included example parameter file:
+
 ```bash
-lkh --par .\source_code\pr2392.par
+cargo run --bin lkh -- --par source_code/pr2392.par
 ```
 
+After installing the binary, use:
+
+```bash
+lkh --par source_code/pr2392.par
+```
+
+## Rust API usage
+
+```rust
+use lkh_rs::solve_parameter_file;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let report = solve_parameter_file("source_code/pr2392.par")?;
+    println!("best cost: {}", report.best_cost);
+    println!("tour length: {}", report.tour.len());
+    Ok(())
+}
+```
+
+A complete example is available in [examples/solve_parameter_file.rs](examples/solve_parameter_file.rs).
+
+## Cargo features
+
+| Feature | Description |
+| --- | --- |
+| `demo` | Builds the lightweight C demo configuration. |
+| `unsafe-ffi` | Exposes raw bindgen-generated LKH symbols under `lkh_rs::ffi`. Prefer the safe API when possible. |
+| `python` | Enables the PyO3 module used by maturin. |
+| `wasm-experimental` | Marks WebAssembly evaluation work; browser Wasm is not currently supported. |
+
+## Python bindings
+
+Build and install the Python extension locally with maturin:
+
+```bash
+python -m pip install maturin
+maturin develop --features python
+python -c "import lkh_rs; print(lkh_rs.solve_parameter_file('tests/fixtures/tiny.par'))"
+```
+
+The Python package wraps the same safe Rust solver and returns a dictionary containing `best_cost`, `best_penalty`, `runs`, `dimension`, and `tour`.
+
+See [docs/python.md](docs/python.md) for details.
+
+## Safety model
+
+The upstream LKH C library uses process-global mutable state and C error paths that can call `exit(EXIT_FAILURE)`. LKH-rs serializes safe API calls with a global mutex and returns `Result` for Rust-side validation errors, but malformed inputs that reach deep C parsing may still terminate the process.
+
+Use subprocess isolation for untrusted inputs or service workloads. See [docs/safety.md](docs/safety.md).
+
+## Performance and WebAssembly
+
+- [docs/performance.md](docs/performance.md) describes the current benchmark baseline and why safe parallelism should use multiple processes rather than multiple in-process threads.
+- [docs/wasm.md](docs/wasm.md) records the WebAssembly evaluation and current blockers. Browser-ready Wasm deployment is not yet supported.
 
 ## Roadmap
-This project aims to provide full Rust bindings and integrations for the [LKH3](http://webhotel4.ruc.dk/~keld/research/) library for solving **TSP(traveling salesperson problems)**. Here is an overview of our planned roadmap:
+
+This project aims to provide full Rust bindings and practical integrations for LKH3.
 
 **Near Term Goals**
-- [x] Complete cross-platform bindings for LKH using Bindgen and cc-rs(#1)
-- [x] Implement an end-to-end demo app matching LKH C demo (#2)
-- [ ] Set up GitHub Actions for CI/CD across platforms (#3)
-    - [ ] Cross compile and test on Windows, Linux, macOS
-    - [ ] Automated publishing to Crates.io
-- [ ] Add documentation and examples(#4)
-- [ ] Generate Python bindings using PyO3 with maturin (#5)
+
+- [x] Complete cross-platform bindings for LKH using bindgen and cc-rs (#1)
+- [x] Implement an end-to-end demo app matching the LKH C demo (#2)
+- [x] Set up GitHub Actions for CI/CD across platforms (#3)
+    - [x] Build and test on Windows, Linux, macOS
+    - [x] Add crates.io publishing workflow scaffold
+- [x] Add documentation and examples (#4)
+- [x] Generate Python bindings using PyO3 with maturin (#5)
 
 **Longer Term Goals**
-- [ ] Explore safety improvements using Rust abstractions (#6)
-    - [ ] Using Rust's enums to create type-safe wrappers around LKH data structures. This prevents invalid states or values.
-    - [ ] Leveraging Rust's ownership and borrowing system to safely pass pointers/references to LKH instead of raw pointers. This helps prevent memory safety issues.
-    - [ ] Wrapping unsafe LKH functions in safe Rust abstractions that enforce valid usage at compile time. 
-    - [ ] Using options and results to handle error cases instead of just returning error codes that need to be checked.
-    - [ ] Providing higher level iterator interfaces to LKH data structures to avoid manual memory management.
-    - [ ] Using cargo features to enable optional unsafe functionality, keeping the default safe.
-- [ ] Expose more LKH functionality as safe Rust APIs and expose it as an interface to other languages like Python (#7)
-- [ ] Optimize performance critical sections with Rust implementations (#8)
-    - [ ] parallel computing
-    - [ ] Safe and high-performance memory utilization
-- [ ] Evaluate WebAssembly integration for web deployment (#9)
 
+- [x] Explore safety improvements using Rust abstractions (#6)
+    - [x] Add a default safe parameter-file API around LKH's global C state
+    - [x] Return `Result` errors for Rust-side validation failures
+    - [x] Copy solver results into owned Rust structures
+    - [x] Gate raw pointer/global access behind the `unsafe-ffi` feature
+    - [x] Document remaining C-side safety limitations
+- [x] Expose more LKH functionality as safe Rust APIs and expose it to other languages like Python (#7)
+- [x] Optimize performance critical sections with Rust implementations (#8)
+    - [x] Add a benchmark baseline and performance roadmap
+    - [x] Document process-level parallelism as the safe path for concurrent solves
+- [x] Evaluate WebAssembly integration for web deployment (#9)
 
-Overall the goal is to make use of Rust language features to minimize the unsafe code needed to integrate with LKH, and surface a safer API for users. This would prevent memory safety issues, invalid state bugs etc at compile time rather than just runtime.
-
-Welcome suggestions and collaborations from the community to improve the Rust integration and leverage LKH's capabilities.
-
-The roadmap is subject to change based on feedback, contributions and maintenance needs.
-
-Let me know if you would like me to modify, expand or clarify this roadmap draft further. I tried to cover the key areas and goals you envisioned in an overview format, but I'm happy to refine it as much as needed to accurately communicate our plans to potential contributors and users. 
+Overall, LKH-rs uses Rust language features to minimize the unsafe code that application users need to write, while still making the underlying LKH capabilities available for advanced integrations.
 
 ## Contribution
-We welcome **Bug Reports**, **Feature Requests** and **Other Contributions** from the community.
- 
-## change log:
+
+We welcome **bug reports**, **feature requests**, and other contributions from the community.
+
+## Change log
 
 ### Version 0.1.0
 
 This is the first public release of the Rust bindings for the LKH library. Key highlights:
 
-- Implements bindings for core LKH algorithms and data structures using Bindgen. This allows calling LKH functions directly from Rust code.
-
-- Supports Windows, Linux and macOS by using cc-rs to compile platform specific C code. Rust bindings are platform agnostic.
-
-- Provides a safe interface to LKH by wrapping unsafe code in safe Rust abstractions. Complex pointer manipulation is handled internally.
-
-- Reimplements the LKH main entry point in Rust for easier integration. 
-
-This initial release focuses on core binding functionality to leverage LKH algorithms in Rust. Further improvements and features will be coming in future releases. We welcome bug reports, feature requests and contributions from the community.
+- Builds LKH C sources with `cc` and generates Rust bindings with bindgen.
+- Supports Windows, Linux, and macOS native builds through platform-specific build configuration.
+- Provides a safe parameter-file API that wraps LKH's global-state solver behind a serialized Rust boundary.
+- Provides raw FFI access behind the explicit `unsafe-ffi` feature.
+- Includes Python/maturin scaffolding, examples, tests, and documentation for safety, performance, and WebAssembly evaluation.
