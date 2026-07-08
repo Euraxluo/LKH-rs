@@ -130,6 +130,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+See [docs/release.md](docs/release.md) for the required repository
+environments and publishing credentials.
+
 ## Programmatic API
 
 LKH-rs also exposes an object-based API for callers that do not want to write
