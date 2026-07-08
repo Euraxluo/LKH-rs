@@ -16,9 +16,16 @@ Those constraints do not map cleanly to `wasm32-unknown-unknown` browser modules
 
 ## Possible future paths
 
-1. **WASI CLI**: compile toward a WASI target and provide a virtual filesystem for parameter/problem/tour files.
-2. **Emscripten**: keep more of the C stdio model and use Emscripten's filesystem support.
-3. **Backend service**: run native LKH-rs on a server and expose a web API to browser clients.
-4. **Long-term Rust migration**: incrementally rewrite isolated data structures and algorithms in Rust until a smaller, in-memory Wasm surface is possible.
+1. **In-memory Wasm backend**: preserve `RoutingProblem` and `SearchParameters` as the public API and initialize solver structures without filesystem access.
+2. **WASI CLI**: compile toward a WASI target and provide a virtual filesystem for legacy parameter/problem/tour files.
+3. **Emscripten**: keep more of the C stdio model and use Emscripten's filesystem support.
+4. **Backend service**: run native LKH-rs on a server and expose a web API to browser clients.
+5. **Long-term Rust migration**: incrementally rewrite isolated data structures and algorithms in Rust until a smaller, in-memory Wasm surface is possible.
 
 For now, the `wasm-experimental` feature documents this evaluation status; it does not claim browser deployment support.
+
+The programmatic `RoutingProblem` and `SearchParameters` API is designed around
+in-memory data rather than file paths. Native `solve_problem` initializes LKH
+directly from that model instead of writing temporary problem files. A
+browser-oriented Wasm backend should preserve the same public model while
+replacing the remaining native C runtime assumptions listed above.

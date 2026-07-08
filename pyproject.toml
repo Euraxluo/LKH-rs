@@ -19,6 +19,6 @@ classifiers = [
 
 [tool.maturin]
 bindings = "pyo3"
-features = ["python"]
+features = ["python-extension-module"]
 python-source = "python"
 module-name = "lkh_rs._native"

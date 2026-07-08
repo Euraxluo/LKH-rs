@@ -78,8 +78,7 @@ impl Config {
     fn matches_excludes(&self, input: &str) -> bool {
         let ignore = match &self.excludes {
             Some(excludes_list) => {
-                let mut build_ignore =
-                    ignore::gitignore::GitignoreBuilder::new(env!("CARGO_MANIFEST_DIR"));
+                let mut build_ignore = ignore::gitignore::GitignoreBuilder::new(manifest_dir());
                 for ele in excludes_list {
                     build_ignore.add_line(None, ele).expect("add_line failed");
                 }
@@ -95,7 +94,7 @@ impl Config {
 
     // path normalize
     fn normalize_paths(&mut self) {
-        let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let cargo_path = manifest_dir();
         let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is not set"));
         log!("cargo_path:{:#?}", cargo_path);
         self.generate_wrapper_header = Some(self.generate_wrapper_header.unwrap_or(true));
@@ -115,11 +114,7 @@ impl Config {
         for entry in fs::read_dir(&self.lkh_src_dir).expect("read sources failed") {
             let path = entry.unwrap().path();
             if path.extension() == Some("c".as_ref()) {
-                let path_str = path_to_string(
-                    Path::new(&path),
-                    &PathBuf::from(env!("CARGO_MANIFEST_DIR")),
-                    true,
-                );
+                let path_str = path_to_string(Path::new(&path), &manifest_dir(), true);
                 if self.matches_excludes(&path_str) {
                     continue;
                 }
@@ -134,11 +129,7 @@ impl Config {
         for entry in fs::read_dir(&self.lkh_header_dir).expect("read headers failed") {
             let path = entry.unwrap().path();
             if path.extension() == Some("h".as_ref()) {
-                let path_str = path_to_string(
-                    Path::new(&path),
-                    &PathBuf::from(env!("CARGO_MANIFEST_DIR")),
-                    true,
-                );
+                let path_str = path_to_string(Path::new(&path), &manifest_dir(), true);
                 if self.matches_excludes(&path_str) {
                     continue;
                 }
@@ -147,6 +138,10 @@ impl Config {
         }
         headers
     }
+}
+
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set"))
 }
 
 fn main() {

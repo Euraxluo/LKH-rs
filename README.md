@@ -4,7 +4,7 @@
 
 Rust bindings and safe wrappers for [LKH3](http://webhotel4.ruc.dk/~keld/research/), Keld Helsgaun's heuristic solver for **TSP (traveling salesperson problems)** and related routing problems.
 
-The crate builds the vendored LKH C sources with `cc`, generates Rust bindings with `bindgen`, and exposes a small safe Rust API for solving existing LKH parameter files.
+The crate builds the vendored LKH C sources with `cc`, generates Rust bindings with `bindgen`, and exposes safe Rust APIs for both in-memory programmatic solves and existing LKH parameter files.
 
 ## Requirements
 
@@ -41,17 +41,23 @@ lkh --par source_code/pr2392.par
 ## Rust API usage
 
 ```rust
-use lkh_rs::solve_parameter_file;
+use lkh_rs::{solve_problem, RoutingProblem, SearchParameters};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let report = solve_parameter_file("source_code/pr2392.par")?;
+    let problem = RoutingProblem::euclidean_2d([
+        (0.0, 0.0),
+        (0.0, 1.0),
+        (1.0, 1.0),
+        (1.0, 0.0),
+    ])?;
+    let report = solve_problem(&problem, &SearchParameters::new())?;
     println!("best cost: {}", report.best_cost);
     println!("tour length: {}", report.tour.len());
     Ok(())
 }
 ```
 
-A complete example is available in [examples/solve_parameter_file.rs](examples/solve_parameter_file.rs).
+Complete examples are available in [examples/solve_programmatic.rs](examples/solve_programmatic.rs) and [examples/solve_parameter_file.rs](examples/solve_parameter_file.rs).
 
 ## Cargo features
 
@@ -68,13 +74,39 @@ Build and install the Python extension locally with maturin:
 
 ```bash
 python -m pip install maturin
-maturin develop --features python
+maturin develop
 python -c "import lkh_rs; print(lkh_rs.solve_parameter_file('tests/fixtures/tiny.par'))"
 ```
 
 The Python package wraps the same safe Rust solver and returns a dictionary containing `best_cost`, `best_penalty`, `runs`, `dimension`, and `tour`.
 
 See [docs/python.md](docs/python.md) for details.
+
+## Programmatic API
+
+LKH-rs also exposes an object-based API for callers that do not want to write
+TSPLIB and `.par` files by hand:
+
+```rust
+use lkh_rs::{solve_problem, RoutingProblem, SearchParameters};
+
+let problem = RoutingProblem::euclidean_2d([
+    (0.0, 0.0),
+    (0.0, 1.0),
+    (1.0, 1.0),
+    (1.0, 0.0),
+])?;
+let report = solve_problem(&problem, &SearchParameters::new())?;
+println!("{:?}", report.tour);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The first supported builders are `euclidean_2d`, `distance_matrix`, and
+`asymmetric_distance_matrix`. Solving uses the in-memory model directly. TSPLIB
+and LKH parameter text can still be rendered or written explicitly with
+`to_tsplib`, `write_tsplib`, `to_lkh_parameter_file`, and
+`write_lkh_parameter_file` when callers want files for compatibility or
+debugging.
 
 ## Safety model
 

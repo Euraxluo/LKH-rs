@@ -62,6 +62,8 @@ pub mod ffi {
 
 pub mod error;
 #[cfg(not(feature = "demo"))]
+pub mod problem;
+#[cfg(not(feature = "demo"))]
 pub mod solver;
 
 #[cfg(all(feature = "python", not(feature = "demo")))]
@@ -69,7 +71,12 @@ mod python;
 
 pub use error::LkhError;
 #[cfg(not(feature = "demo"))]
-pub use solver::{solve_parameter_file, solve_with_options, SolveOptions, SolveReport};
+pub use problem::{Point2d, ProblemKind, RoutingProblem, SearchParameters};
+#[cfg(not(feature = "demo"))]
+pub use solver::{
+    solve_parameter_file, solve_problem, solve_problem_with_options, solve_with_options,
+    ProgrammaticSolveOptions, SolveOptions, SolveReport,
+};
 
 #[cfg(not(feature = "demo"))]
 const PLUS_INFINITY: sys::GainType = i64::MAX;

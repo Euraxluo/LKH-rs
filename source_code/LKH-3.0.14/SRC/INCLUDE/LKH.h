@@ -512,6 +512,7 @@ void FreeStructures(void);
 char *FullName(char * Name, GainType Cost);
 int fscanint(FILE *f, int *v);
 GainType Gain23(void);
+void Gain23_Reset(void);
 void GenerateCandidates(int MaxCandidates, GainType MaxAlpha, int Symmetric);
 double GetTime(void);
 GainType GreedyTour(void);
@@ -652,4 +653,3 @@ void WritePenalties(void);
 void WriteTour(char * FileName, int * Tour, GainType Cost);
 
 #endif
-
