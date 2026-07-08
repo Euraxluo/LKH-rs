@@ -59,6 +59,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Complete examples are available in [examples/solve_programmatic.rs](examples/solve_programmatic.rs) and [examples/solve_parameter_file.rs](examples/solve_parameter_file.rs).
 
+Run them with:
+
+```bash
+cargo run --example solve_programmatic
+cargo run --example solve_parameter_file -- source_code/pr2392.par
+```
+
+## FastAPI JSON backend
+
+A browser-friendly JSON backend is available in
+[examples/fastapi_backend](examples/fastapi_backend). It serves a small route
+visualizer and exposes `POST /api/solve`, where the frontend sends JSON problem
+data and receives a JSON solve report from the real `lkh_rs` Python package.
+
+```bash
+python -m venv /tmp/lkh-rs-api-venv
+source /tmp/lkh-rs-api-venv/bin/activate
+python -m pip install -r examples/fastapi_backend/requirements.txt
+maturin develop
+uvicorn app:app --app-dir examples/fastapi_backend --host 127.0.0.1 --port 8877
+```
+
+Then open `http://127.0.0.1:8877/`.
+
+See [docs/fastapi.md](docs/fastapi.md) for the JSON payload shape.
+
 ## Cargo features
 
 | Feature | Description |
@@ -66,7 +92,7 @@ Complete examples are available in [examples/solve_programmatic.rs](examples/sol
 | `demo` | Builds the lightweight C demo configuration. |
 | `unsafe-ffi` | Exposes raw bindgen-generated LKH symbols under `lkh_rs::ffi`. Prefer the safe API when possible. |
 | `python` | Enables the PyO3 module used by maturin. |
-| `wasm-experimental` | Marks WebAssembly evaluation work; browser Wasm is not currently supported. |
+| `wasm-experimental` | Marks WebAssembly evaluation work; the full LKH backend is not yet browser-ready. |
 
 ## Python bindings
 
@@ -81,6 +107,28 @@ python -c "import lkh_rs; print(lkh_rs.solve_parameter_file('tests/fixtures/tiny
 The Python package wraps the same safe Rust solver and returns a dictionary containing `best_cost`, `best_penalty`, `runs`, `dimension`, and `tour`.
 
 See [docs/python.md](docs/python.md) for details.
+
+After `maturin develop`, run the Python programmatic example with:
+
+```bash
+python examples/python/solve_programmatic.py
+```
+
+## Release
+
+Git tags named `v*` run the release workflow. The workflow publishes:
+
+- the Rust crate to crates.io using `CARGO_REGISTRY_TOKEN` in the `crates.io`
+  environment;
+- Python wheels for Linux, macOS, and Windows plus an sdist to PyPI using PyPI
+  Trusted Publishing in the `pypi` environment.
+
+Create a release with:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ## Programmatic API
 
@@ -138,10 +186,11 @@ The upstream LKH C library uses process-global mutable state and C error paths t
 
 Use subprocess isolation for untrusted inputs or service workloads. See [docs/safety.md](docs/safety.md).
 
-## Performance and WebAssembly
+## Performance and browser integration
 
 - [docs/performance.md](docs/performance.md) describes the current benchmark baseline and why safe parallelism should use multiple processes rather than multiple in-process threads.
-- [docs/wasm.md](docs/wasm.md) records the WebAssembly evaluation and current blockers. Browser-ready Wasm deployment is not yet supported.
+- [docs/fastapi.md](docs/fastapi.md) describes the current browser integration path using FastAPI and JSON.
+- [docs/wasm.md](docs/wasm.md) records the WebAssembly evaluation and current blockers. Browser-ready Wasm deployment is not currently supported.
 
 ## Roadmap
 

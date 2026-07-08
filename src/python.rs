@@ -15,7 +15,10 @@ mod _native {
 
     #[pyfunction]
     fn solve_parameter_file(py: Python<'_>, path: &str) -> PyResult<Py<PyDict>> {
-        let report = crate::solve_parameter_file(path).map_err(to_py_error)?;
+        let path = path.to_owned();
+        let report = py
+            .allow_threads(move || crate::solve_parameter_file(path))
+            .map_err(to_py_error)?;
         report_to_dict(py, report)
     }
 
@@ -27,7 +30,9 @@ mod _native {
     ) -> PyResult<Py<PyDict>> {
         let problem = routing_problem_from_dict(problem)?;
         let parameters = search_parameters_from_dict(parameters)?;
-        let report = crate::solve_problem(&problem, &parameters).map_err(to_py_error)?;
+        let report = py
+            .allow_threads(move || crate::solve_problem(&problem, &parameters))
+            .map_err(to_py_error)?;
         report_to_dict(py, report)
     }
 

@@ -13,5 +13,14 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
+# Python extension build artifacts produced by maturin develop
+__pycache__/
+*.py[cod]
+python/lkh_rs/_native*.so
+
+# LKH C sources may be built manually while debugging.
+source_code/LKH-*/LKH
+source_code/LKH-*/SRC/OBJ/
+
 .idea
 .vscode

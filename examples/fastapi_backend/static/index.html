@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LKH-rs JSON Solver</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f4ee;
+        --panel: #ffffff;
+        --ink: #1e2528;
+        --muted: #687477;
+        --line: #cfd7d3;
+        --green: #19735d;
+        --red: #b23a48;
+        --yellow: #d5a62f;
+        --code: #142022;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 72px;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--line);
+        background: #fffdf8;
+      }
+
+      .case-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #fbfaf6;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .case-meta span {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      select,
+      input,
+      button {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      select {
+        min-width: 190px;
+        padding: 0 34px 0 12px;
+      }
+
+      .parameter-control {
+        display: grid;
+        gap: 3px;
+        min-width: 104px;
+      }
+
+      .parameter-control span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 680;
+      }
+
+      .parameter-control input {
+        width: 112px;
+        padding: 0 10px;
+        font-weight: 680;
+      }
+
+      button {
+        padding: 0 14px;
+        cursor: pointer;
+        font-weight: 680;
+      }
+
+      button.primary {
+        border-color: var(--green);
+        background: var(--green);
+        color: #fff;
+      }
+
+      button:disabled {
+        cursor: progress;
+        opacity: 0.62;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
+        gap: 18px;
+        padding: 18px;
+      }
+
+      section {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 48px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--line);
+        font-weight: 720;
+      }
+
+      textarea {
+        display: block;
+        width: 100%;
+        min-height: calc(100vh - 168px);
+        resize: vertical;
+        border: 0;
+        outline: 0;
+        padding: 14px;
+        background: var(--code);
+        color: #eef7f2;
+        font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        tab-size: 2;
+      }
+
+      .visual-body {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: calc(100vh - 168px);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+      }
+
+      .stat {
+        min-width: 0;
+        padding: 12px 14px;
+        border-right: 1px solid var(--line);
+      }
+
+      .stat:last-child {
+        border-right: 0;
+      }
+
+      .stat span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 18px;
+      }
+
+      .canvas-wrap {
+        position: relative;
+        min-height: 420px;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 520;
+      }
+
+      .status.error {
+        color: var(--red);
+      }
+
+      @media (max-width: 900px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        textarea,
+        .visual-body {
+          min-height: 520px;
+        }
+
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .stat:nth-child(2n) {
+          border-right: 0;
+        }
+
+        .stat:nth-child(-n + 4) {
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>LKH-rs JSON Solver</h1>
+      <div class="toolbar">
+        <select id="sampleSelect" aria-label="Sample payload"></select>
+        <label class="parameter-control">
+          <span>Runs</span>
+          <input id="runsInput" type="number" min="1" step="1" value="1">
+        </label>
+        <label class="parameter-control">
+          <span>Max trials</span>
+          <input id="maxTrialsInput" type="number" min="1" step="1" value="100">
+        </label>
+        <button id="formatButton" type="button">Format JSON</button>
+        <button id="runButton" class="primary" type="button">Solve</button>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <div class="section-title">
+          <span>Payload</span>
+          <span class="status" id="status">Ready</span>
+        </div>
+        <textarea id="payloadEditor" spellcheck="false"></textarea>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <span>Route</span>
+          <span class="status" id="nodeStatus">0 nodes</span>
+        </div>
+        <div class="visual-body">
+          <div class="stats">
+            <div class="stat">
+              <span id="objectiveLabel">Objective</span>
+              <strong id="bestCost">-</strong>
+            </div>
+            <div class="stat">
+              <span id="knownLabel">Known objective</span>
+              <strong id="knownOptimum">-</strong>
+            </div>
+            <div class="stat">
+              <span>Gap</span>
+              <strong id="gap">-</strong>
+            </div>
+            <div class="stat">
+              <span id="secondaryLabel">Penalty</span>
+              <strong id="penalty">-</strong>
+            </div>
+            <div class="stat">
+              <span>Runs</span>
+              <strong id="runs">-</strong>
+            </div>
+            <div class="stat">
+              <span>Elapsed</span>
+              <strong id="elapsed">-</strong>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="routeCanvas" width="1200" height="820"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const editor = document.getElementById("payloadEditor");
+      const select = document.getElementById("sampleSelect");
+      const runButton = document.getElementById("runButton");
+      const formatButton = document.getElementById("formatButton");
+      const runsInput = document.getElementById("runsInput");
+      const maxTrialsInput = document.getElementById("maxTrialsInput");
+      const statusEl = document.getElementById("status");
+      const nodeStatusEl = document.getElementById("nodeStatus");
+      const objectiveLabelEl = document.getElementById("objectiveLabel");
+      const knownLabelEl = document.getElementById("knownLabel");
+      const secondaryLabelEl = document.getElementById("secondaryLabel");
+      const canvas = document.getElementById("routeCanvas");
+      const ctx = canvas.getContext("2d");
+
+      const stats = {
+        bestCost: document.getElementById("bestCost"),
+        knownOptimum: document.getElementById("knownOptimum"),
+        gap: document.getElementById("gap"),
+        penalty: document.getElementById("penalty"),
+        runs: document.getElementById("runs"),
+        elapsed: document.getElementById("elapsed"),
+      };
+
+      let lastReport = null;
+      let lastSolution = null;
+      let currentCase = null;
+      const parameterInputs = [runsInput, maxTrialsInput];
+
+      select.addEventListener("change", () => loadSample(select.value));
+      runButton.addEventListener("click", solvePayload);
+      formatButton.addEventListener("click", () => {
+        try {
+          editor.value = JSON.stringify(JSON.parse(editor.value), null, 2);
+          setStatus("Formatted");
+          drawCurrentPayload();
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+      for (const input of parameterInputs) {
+        input.addEventListener("change", updateEditorFromControls);
+        input.addEventListener("input", updateEditorFromControls);
+      }
+      editor.addEventListener("input", () => {
+        syncControlsFromEditor();
+        drawCurrentPayload();
+      });
+      window.addEventListener("resize", () => drawCurrentPayload());
+
+      loadCases();
+
+      async function loadCases() {
+        setStatus("Loading cases");
+        select.disabled = true;
+        try {
+          const response = await fetch("/api/cases");
+          const body = await response.json();
+          if (!response.ok) {
+            throw new Error(body.detail || "failed to load cases");
+          }
+          select.replaceChildren();
+          for (const item of body.cases) {
+            const option = document.createElement("option");
+            option.value = item.id;
+            const known = item.known_objective ?? item.known_optimum;
+            const knownLabel = item.known_objective_label || item.known_target_label || "Known objective";
+            const target = known === null || known === undefined ? "no objective" : `${knownLabel} ${known}`;
+            option.textContent = `${item.label} · ${target} · ${item.nodes || "?"} nodes`;
+            option.title = `${item.source}: ${item.relative_path}`;
+            select.appendChild(option);
+          }
+          if (body.cases.length === 0) {
+            throw new Error("no cases available");
+          }
+          await loadSample(body.cases[0].id);
+        } catch (error) {
+          setStatus(error.message, true);
+        } finally {
+          select.disabled = false;
+        }
+      }
+
+      async function loadSample(caseId) {
+        setStatus("Loading case");
+        select.disabled = true;
+        try {
+          const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}`);
+          const body = await response.json();
+          if (!response.ok) {
+            throw new Error(body.detail || "failed to load case");
+          }
+          currentCase = body;
+          editor.value = JSON.stringify(body.payload, null, 2);
+          syncControlsFromPayload(body.payload);
+          lastReport = null;
+          lastSolution = null;
+          clearStats();
+          objectiveLabelEl.textContent = body.objective_label || "Objective";
+          knownLabelEl.textContent = body.known_objective_label || body.known_target_label || "Known objective";
+          stats.knownOptimum.textContent = formatValue(body.known_objective ?? body.known_optimum);
+          stats.gap.textContent = "-";
+          setStatus(body.label);
+          drawCase(body, []);
+        } catch (error) {
+          setStatus(error.message, true);
+        } finally {
+          select.disabled = false;
+        }
+      }
+
+      async function solvePayload() {
+        let payload;
+        try {
+          payload = JSON.parse(editor.value);
+        } catch (error) {
+          setStatus(error.message, true);
+          return;
+        }
+        payload = payloadWithControlOverrides(payload);
+        editor.value = JSON.stringify(payload, null, 2);
+
+        setStatus("Solving");
+        runButton.disabled = true;
+        try {
+          const response = await fetch("/api/solve-case", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const body = await response.json();
+          if (!response.ok) {
+            throw new Error(body.detail || "solve failed");
+          }
+          const objective = body.objective || body.comparison || {};
+          lastReport = body.report;
+          lastSolution = body.solution || null;
+          objectiveLabelEl.textContent = objective.label || body.objective_label || "Objective";
+          stats.bestCost.textContent = formatValue(objective.best ?? objective.found ?? body.report.best_cost);
+          knownLabelEl.textContent = objective.known_label || body.known_objective_label || body.known_target_label || "Known objective";
+          stats.knownOptimum.textContent = formatValue(objective.known ?? body.known_objective ?? body.known_optimum);
+          stats.gap.textContent = objective.comparable ? formatGap(objective.gap_percent ?? body.gap_percent) : "-";
+          if (objective.metric === "penalty") {
+            secondaryLabelEl.textContent = secondaryCostLabel(objective);
+            stats.penalty.textContent = body.report.best_cost;
+          } else {
+            secondaryLabelEl.textContent = "Penalty";
+            stats.penalty.textContent = body.report.best_penalty;
+          }
+          stats.runs.textContent = body.report.runs;
+          stats.elapsed.textContent = `${body.elapsed_ms} ms`;
+          setStatus("Solved");
+          drawCase(currentCase, lastSolution ? lastSolution.nodes || [] : body.report.tour || [], lastSolution);
+        } catch (error) {
+          setStatus(error.message, true);
+        } finally {
+          runButton.disabled = false;
+        }
+      }
+
+      function drawCurrentPayload() {
+        const nodes = lastSolution ? lastSolution.nodes || [] : lastReport ? lastReport.tour || [] : [];
+        drawCase(currentCase, nodes, lastSolution);
+      }
+
+      function drawCase(caseData, tour, solution = null) {
+        const points = caseData && caseData.display ? caseData.display.points || [] : [];
+        const dimension = caseData && caseData.display ? caseData.display.dimension || 0 : 0;
+        drawPoints(points, dimension, tour, solution);
+      }
+
+      function drawPoints(points, dimension, tour, solution = null) {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const scale = window.devicePixelRatio || 1;
+        canvas.width = Math.max(640, Math.floor(rect.width * scale));
+        canvas.height = Math.max(420, Math.floor(rect.height * scale));
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+        const width = canvas.width / scale;
+        const height = canvas.height / scale;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#fffdf8";
+        ctx.fillRect(0, 0, width, height);
+        drawGrid(width, height);
+
+        const drawnPoints = points.length > 0 ? points.map(([x, y]) => ({ x, y })) : circularPoints(dimension || 0);
+        nodeStatusEl.textContent = `${dimension || points.length || 0} nodes`;
+        if (drawnPoints.length === 0) {
+          return;
+        }
+
+        const project = projector(drawnPoints, width, height);
+        const projected = drawnPoints.map(project);
+
+        if (tour && tour.length > 1) {
+          ctx.beginPath();
+          let moved = false;
+          for (const node of tour) {
+            const point = projected[node - 1];
+            if (!point) {
+              continue;
+            }
+            if (!moved) {
+              ctx.moveTo(point.x, point.y);
+              moved = true;
+            } else {
+              ctx.lineTo(point.x, point.y);
+            }
+          }
+          const first = projected[tour[0] - 1];
+          if (first && (!solution || solution.closed !== false)) {
+            ctx.lineTo(first.x, first.y);
+          }
+          ctx.strokeStyle = "#19735d";
+          ctx.lineWidth = 2.6;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+
+        for (let index = 0; index < projected.length; index += 1) {
+          const point = projected[index];
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, index === 0 ? 5.6 : 4.2, 0, Math.PI * 2);
+          ctx.fillStyle = index === 0 ? "#b23a48" : "#1e2528";
+          ctx.fill();
+        }
+      }
+
+      function drawGrid(width, height) {
+        ctx.strokeStyle = "#edf0eb";
+        ctx.lineWidth = 1;
+        for (let x = 24; x < width; x += 32) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        for (let y = 24; y < height; y += 32) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+      }
+
+      function circularPoints(size) {
+        const points = [];
+        for (let index = 0; index < size; index += 1) {
+          const angle = -Math.PI / 2 + (Math.PI * 2 * index) / size;
+          points.push({
+            x: Math.cos(angle) * 100,
+            y: Math.sin(angle) * 100,
+          });
+        }
+        return points;
+      }
+
+      function projector(points, width, height) {
+        const xs = points.map((point) => point.x);
+        const ys = points.map((point) => point.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const pad = 42;
+        const spanX = Math.max(1, maxX - minX);
+        const spanY = Math.max(1, maxY - minY);
+        const scale = Math.min((width - pad * 2) / spanX, (height - pad * 2) / spanY);
+        const usedW = spanX * scale;
+        const usedH = spanY * scale;
+        const offsetX = (width - usedW) / 2;
+        const offsetY = (height - usedH) / 2;
+        return (point) => ({
+          x: offsetX + (point.x - minX) * scale,
+          y: offsetY + (point.y - minY) * scale,
+        });
+      }
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", isError);
+      }
+
+      function clearStats() {
+        stats.bestCost.textContent = "-";
+        objectiveLabelEl.textContent = "Objective";
+        knownLabelEl.textContent = "Known objective";
+        stats.knownOptimum.textContent = "-";
+        stats.gap.textContent = "-";
+        secondaryLabelEl.textContent = "Penalty";
+        stats.penalty.textContent = "-";
+        stats.runs.textContent = "-";
+        stats.elapsed.textContent = "-";
+      }
+
+      function formatValue(value) {
+        return value === null || value === undefined ? "-" : value;
+      }
+
+      function formatGap(value) {
+        return value === null || value === undefined ? "-" : `${value}%`;
+      }
+
+      function syncControlsFromEditor() {
+        try {
+          syncControlsFromPayload(JSON.parse(editor.value));
+        } catch (_error) {
+        }
+      }
+
+      function syncControlsFromPayload(payload) {
+        const overrides = payload && payload.overrides ? payload.overrides : {};
+        runsInput.value = positiveInteger(overrides.RUNS, 1);
+        maxTrialsInput.value = positiveInteger(overrides.MAX_TRIALS, 100);
+      }
+
+      function updateEditorFromControls() {
+        try {
+          const payload = payloadWithControlOverrides(JSON.parse(editor.value));
+          editor.value = JSON.stringify(payload, null, 2);
+        } catch (_error) {
+        }
+      }
+
+      function payloadWithControlOverrides(payload) {
+        const next = payload && typeof payload === "object" ? payload : {};
+        const overrides = next.overrides && typeof next.overrides === "object" ? next.overrides : {};
+        overrides.RUNS = positiveInteger(runsInput.value, 1);
+        overrides.MAX_TRIALS = positiveInteger(maxTrialsInput.value, 100);
+        next.overrides = overrides;
+        return next;
+      }
+
+      function positiveInteger(value, fallback) {
+        const number = Number.parseInt(value, 10);
+        if (!Number.isFinite(number) || number < 1) {
+          return fallback;
+        }
+        return number;
+      }
+
+      function secondaryCostLabel(objective) {
+        if (objective.label === "Longest route" || objective.label === "Largest route size") {
+          return "Total cost";
+        }
+        return "LKH cost";
+      }
+    </script>
+  </body>
+</html>

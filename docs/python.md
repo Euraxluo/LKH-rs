@@ -2,6 +2,9 @@
 
 LKH-rs includes a small PyO3/maturin wrapper around the safe Rust API.
 
+A complete runnable example is available at
+[`examples/python/solve_programmatic.py`](../examples/python/solve_programmatic.py).
+
 ## Build locally
 
 ```bash

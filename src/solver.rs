@@ -403,6 +403,7 @@ unsafe fn run_lkh(
     options: &SolveOptions,
 ) -> Result<SolveReport, LkhError> {
     Gain23_Reset();
+    reset_parameter_file_run_state();
     ParameterFileName = parameter_file_name;
     ReadParameters();
     if let Some(trace_level) = options.trace_level {
@@ -740,6 +741,7 @@ unsafe fn reset_programmatic_run_state() {
     // ReadParameters, ReadProblem, and the search loop before loading a new
     // in-memory instance.
     FreeStructures();
+    reset_file_globals();
     FirstNode = ptr::null_mut();
     Depot = ptr::null_mut();
     WeightType = -1;
@@ -783,6 +785,53 @@ unsafe fn reset_programmatic_run_state() {
     InitialTourFile = ptr::null_mut();
     SubproblemTourFile = ptr::null_mut();
     MergeTourFile = ptr::null_mut();
+}
+
+unsafe fn reset_parameter_file_run_state() {
+    // ReadParameters resets many scalar parameters but only a subset of file
+    // names. Clear the full file-related surface here so a previous case
+    // cannot leak INITIAL_TOUR_FILE, TOP_SOLUTION_FILE, or similar settings
+    // into the next parameter-file solve.
+    FreeStructures();
+    reset_problem_globals();
+    reset_file_globals();
+    ParameterFile = ptr::null_mut();
+    ProblemFile = ptr::null_mut();
+    PiFile = ptr::null_mut();
+    InputTourFile = ptr::null_mut();
+    InitialTourFile = ptr::null_mut();
+    SubproblemTourFile = ptr::null_mut();
+    MergeTourFile = ptr::null_mut();
+    ColorCount = ptr::null_mut();
+    FirstConstraint = ptr::null_mut();
+    FirstActive = ptr::null_mut();
+    LastActive = ptr::null_mut();
+    FirstSegment = ptr::null_mut();
+    FirstSSegment = ptr::null_mut();
+    Reversed = 0;
+    Distance = None;
+    OldDistance = None;
+    C = None;
+    D = None;
+    c = None;
+    Penalty = None;
+    MergeWithTour = Some(MergeWithTourIPT);
+    OptimizePenalty = 0;
+    CurrentPenalty = 0;
+    CurrentGain = 0;
+    BestCost = PLUS_INFINITY;
+    BestPenalty = PLUS_INFINITY;
+    LowerBound = 0.0;
+    M = 0;
+    Swaps = 0;
+    OldSwaps = 0;
+    Hash = 0;
+    CacheMask = 0;
+    PredSucCostAvailable = 0;
+    IsChild = 0;
+    Run = 0;
+    Trial = 0;
+    PopulationSize = 0;
 }
 
 unsafe fn read_programmatic_parameters(
@@ -875,6 +924,26 @@ unsafe fn reset_problem_globals() {
     FirstSegment = ptr::null_mut();
     FirstSSegment = ptr::null_mut();
     Reversed = 0;
+    reset_file_globals();
+}
+
+unsafe fn reset_file_globals() {
+    ProblemFileName = ptr::null_mut();
+    PiFileName = ptr::null_mut();
+    TourFileName = ptr::null_mut();
+    OutputTourFileName = ptr::null_mut();
+    InputTourFileName = ptr::null_mut();
+    InitialTourFileName = ptr::null_mut();
+    SubproblemTourFileName = ptr::null_mut();
+    MTSPSolutionFileName = ptr::null_mut();
+    SINTEFSolutionFileName = ptr::null_mut();
+    TOPSolutionFileName = ptr::null_mut();
+    CandidateFileName = ptr::null_mut();
+    EdgeFileName = ptr::null_mut();
+    MergeTourFileName = ptr::null_mut();
+    CandidateFiles = 0;
+    EdgeFiles = 0;
+    MergeTourFiles = 0;
 }
 
 unsafe fn run_lkh_search(mut last_time: f64) -> Result<SolveReport, LkhError> {
