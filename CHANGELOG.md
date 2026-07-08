@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-07-09
 
 Initial public release candidate.
 
@@ -18,7 +18,7 @@ Initial public release candidate.
 - CI workflows for Rust checks/tests and Python wheel builds across Linux,
   macOS, and Windows.
 - Release workflow for publishing Python wheels/sdist to PyPI and the Rust
-  crate to crates.io from `v*` tags.
+  crate to crates.io from `main` after version and registry-state checks.
 
 ### Fixed
 

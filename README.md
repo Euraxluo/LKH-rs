@@ -116,19 +116,14 @@ python examples/python/solve_programmatic.py
 
 ## Release
 
-Git tags named `v*` run the release workflow. The workflow publishes:
+Pushes to `main` run the release workflow. When the package version in
+`Cargo.toml` and `pyproject.toml` has not been published yet, the workflow
+publishes:
 
 - the Rust crate to crates.io using `CARGO_REGISTRY_TOKEN` in the `crates.io`
   environment;
 - Python wheels for Linux, macOS, and Windows plus an sdist to PyPI using PyPI
   Trusted Publishing in the `pypi` environment.
-
-Create a release with:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
 
 See [docs/release.md](docs/release.md) for the required repository
 environments and publishing credentials.

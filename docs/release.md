@@ -1,9 +1,14 @@
 # Release
 
-Every commit to `main` runs CI and Python wheel builds. Publishing to PyPI and
-crates.io happens from `v*` tags only. Package registries do not allow replacing
-an already-published version, so publishing every ordinary commit would make the
-current `0.1.0` version unusable after the first upload.
+Every commit to `main` runs CI, builds Python wheels, and then runs the release
+workflow. If the version in `Cargo.toml` and `pyproject.toml` has not been
+published yet, the workflow publishes the Python package to PyPI and the Rust
+crate to crates.io. If that version already exists on both registries, the
+workflow skips publishing.
+
+Package registries do not allow replacing an already-published version. The
+release workflow therefore checks registry state before uploading anything and
+fails if a version exists on only one registry.
 
 ## Required repository setup
 
@@ -33,14 +38,16 @@ active.
 ## Publish
 
 Update `Cargo.toml`, `pyproject.toml`, and `CHANGELOG.md` to the same version,
-then push a tag:
+then push to `main`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git push origin main
 ```
 
 The workflow builds Python wheels for Linux, macOS, and Windows, builds a
 Python source distribution, publishes them to PyPI, verifies the Rust crate
 package, and publishes it to crates.io. The Rust crate publish depends on the
 PyPI publish job so the two package surfaces stay version-aligned.
+
+Tags such as `v0.1.0` may still be pushed for GitHub release bookkeeping, but
+publishing does not require a tag.
