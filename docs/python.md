@@ -5,6 +5,15 @@ LKH-rs includes a small PyO3/maturin wrapper around the safe Rust API.
 A complete runnable example is available at
 [`examples/python/solve_programmatic.py`](../examples/python/solve_programmatic.py).
 
+## Install from PyPI
+
+```bash
+python -m pip install lkh-rs
+```
+
+The published package exposes the same typed API as local maturin builds and
+uses an `abi3` extension module for Python 3.8+ on supported platforms.
+
 ## Build locally
 
 ```bash

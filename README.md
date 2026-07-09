@@ -12,6 +12,14 @@ The build uses `bindgen`, so your system needs a working Clang/libclang installa
 
 ## Building
 
+Install the published Rust crate with:
+
+```bash
+cargo add lkh-rs
+```
+
+Or build the repository locally:
+
 ```bash
 git clone https://github.com/Euraxluo/LKH-rs
 cd LKH-rs
@@ -96,7 +104,28 @@ See [docs/fastapi.md](docs/fastapi.md) for the JSON payload shape.
 
 ## Python bindings
 
-Build and install the Python extension locally with maturin:
+Install the published Python package with:
+
+```bash
+python -m pip install lkh-rs
+```
+
+Then solve a small in-memory TSP:
+
+```python
+import lkh_rs
+
+report = lkh_rs.solve_euclidean_2d([
+    (0.0, 0.0),
+    (0.0, 1.0),
+    (1.0, 1.0),
+    (1.0, 0.0),
+], lkh_rs.SearchParameters(max_trials=100))
+print(report["best_cost"])
+print(report["tour"])
+```
+
+To build and install the Python extension locally with maturin:
 
 ```bash
 python -m pip install maturin
@@ -117,13 +146,15 @@ python examples/python/solve_programmatic.py
 ## Release
 
 Pushes to `main` run the release workflow. When the package version in
-`Cargo.toml` and `pyproject.toml` has not been published yet, the workflow
-publishes:
+`Cargo.toml` and `pyproject.toml` is missing from either registry, the workflow
+publishes only the missing artifact:
 
 - the Rust crate to crates.io using `CARGO_REGISTRY_TOKEN` in the `crates.io`
   environment;
 - Python wheels for Linux, macOS, and Windows plus an sdist to PyPI using PyPI
   Trusted Publishing in the `pypi` environment.
+
+Version `0.1.0` is available on both crates.io and PyPI.
 
 See [docs/release.md](docs/release.md) for the required repository
 environments and publishing credentials.

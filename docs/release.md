@@ -7,8 +7,9 @@ crate to crates.io. If that version already exists on both registries, the
 workflow skips publishing.
 
 Package registries do not allow replacing an already-published version. The
-release workflow therefore checks registry state before uploading anything and
-fails if a version exists on only one registry.
+release workflow therefore checks registry state before uploading anything. If
+a version exists on only one registry, the workflow publishes only the missing
+package and skips the registry that already has that version.
 
 ## Required repository setup
 
@@ -44,10 +45,12 @@ then push to `main`:
 git push origin main
 ```
 
-The workflow builds Python wheels for Linux, macOS, and Windows, builds a
-Python source distribution, publishes them to PyPI, verifies the Rust crate
-package, and publishes it to crates.io. The Rust crate publish depends on the
-PyPI publish job so the two package surfaces stay version-aligned.
+When the Python package is missing, the workflow builds Python wheels for
+Linux, macOS, and Windows, builds a Python source distribution, and publishes
+them to PyPI. When the Rust crate is missing, the workflow verifies the Rust
+crate package and publishes it to crates.io. The Rust crate publish waits for
+the PyPI job, which either publishes the Python package or records that it was
+already present.
 
 Tags such as `v0.1.0` may still be pushed for GitHub release bookkeeping, but
 publishing does not require a tag.
