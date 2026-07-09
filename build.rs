@@ -23,28 +23,16 @@ macro_rules! log {
 
     }
 }
-#[cfg(feature = "demo")]
-#[cfg(unix)]
-const CONFIG_FILE: &str = "build.demo.unix.yaml";
-
-#[cfg(feature = "demo")]
-#[cfg(windows)]
-const CONFIG_FILE: &str = "build.demo.win.yaml";
-
-#[cfg(not(feature = "demo"))]
 #[cfg(windows)]
 const CONFIG_FILE: &str = "build.win.yaml";
 
-#[cfg(not(feature = "demo"))]
 #[cfg(target_os = "macos")]
 const CONFIG_FILE: &str = "build.osx.yaml";
 
-#[cfg(not(feature = "demo"))]
 #[cfg(not(target_os = "macos"))]
 #[cfg(unix)]
 const CONFIG_FILE: &str = "build.unix.yaml";
 
-#[cfg(not(feature = "demo"))]
 #[cfg(not(any(windows, unix)))]
 const CONFIG_FILE: &str = "build.yaml";
 

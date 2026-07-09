@@ -29,10 +29,8 @@ pub mod ffi {
 
     pub use crate::sys::*;
 
-    #[cfg(not(feature = "demo"))]
     pub const PLUS_INFINITY: GainType = i64::MAX;
 
-    #[cfg(not(feature = "demo"))]
     pub const MINUS_INFINITY: GainType = i64::MIN;
 
     /// Compare a penalty/cost pair with an indexed global fitness entry.
@@ -41,7 +39,6 @@ pub mod ffi {
     ///
     /// `PenaltyFitness` and `Fitness` must have been initialized by LKH, and
     /// `i` must be within both arrays.
-    #[cfg(not(feature = "demo"))]
     pub unsafe fn smaller_fitness(penalty: GainType, cost: GainType, i: isize) -> bool {
         (penalty < *PenaltyFitness.offset(i))
             || (penalty == *PenaltyFitness.offset(i) && cost < *Fitness.offset(i))
@@ -53,7 +50,6 @@ pub mod ffi {
     ///
     /// `PenaltyFitness` and `Fitness` must have been initialized by LKH, and
     /// `i` must be within both arrays.
-    #[cfg(not(feature = "demo"))]
     pub unsafe fn larger_fitness(penalty: GainType, cost: GainType, i: isize) -> bool {
         (penalty > *PenaltyFitness.offset(i))
             || (penalty == *PenaltyFitness.offset(i) && cost > *Fitness.offset(i))
@@ -61,25 +57,19 @@ pub mod ffi {
 }
 
 pub mod error;
-#[cfg(not(feature = "demo"))]
 pub mod problem;
-#[cfg(not(feature = "demo"))]
 pub mod solver;
 
-#[cfg(all(feature = "python", not(feature = "demo")))]
+#[cfg(feature = "python")]
 mod python;
 
 pub use error::LkhError;
-#[cfg(not(feature = "demo"))]
 pub use problem::{Point2d, ProblemEntry, ProblemKind, RoutingProblem, SearchParameters};
-#[cfg(not(feature = "demo"))]
 pub use solver::{
     solve_parameter_file, solve_problem, solve_problem_with_options, solve_with_options,
     ProgrammaticSolveOptions, SolveOptions, SolveReport,
 };
 
-#[cfg(not(feature = "demo"))]
 const PLUS_INFINITY: sys::GainType = i64::MAX;
 
-#[cfg(not(feature = "demo"))]
 const MINUS_INFINITY: sys::GainType = i64::MIN;

@@ -37,13 +37,13 @@ cargo build --vv
 Run the included example parameter file:
 
 ```bash
-cargo run --bin lkh -- --par source_code/pr2392.par
+cargo run --bin lkh -- --par source_code/LKH-3.0.14/pr2392.par
 ```
 
 After installing the binary, use:
 
 ```bash
-lkh --par source_code/pr2392.par
+lkh --par source_code/LKH-3.0.14/pr2392.par
 ```
 
 ## Rust API usage
@@ -71,7 +71,7 @@ Run them with:
 
 ```bash
 cargo run --example solve_programmatic
-cargo run --example solve_parameter_file -- source_code/pr2392.par
+cargo run --example solve_parameter_file -- source_code/LKH-3.0.14/pr2392.par
 ```
 
 ## FastAPI JSON backend
@@ -97,7 +97,6 @@ See [docs/fastapi.md](docs/fastapi.md) for the JSON payload shape.
 
 | Feature | Description |
 | --- | --- |
-| `demo` | Builds the lightweight C demo configuration. |
 | `unsafe-ffi` | Exposes raw bindgen-generated LKH symbols under `lkh_rs::ffi`. Prefer the safe API when possible. |
 | `python` | Enables the PyO3 module used by maturin. |
 
@@ -226,7 +225,7 @@ This project aims to provide full Rust bindings and practical integrations for L
 **Near Term Goals**
 
 - [x] Complete cross-platform bindings for LKH using bindgen and cc-rs (#1)
-- [x] Implement an end-to-end demo app matching the LKH C demo (#2)
+- [x] Implement end-to-end CLI and example solves (#2)
 - [x] Set up GitHub Actions for CI/CD across platforms (#3)
     - [x] Build and test on Windows, Linux, macOS
     - [x] Add crates.io publishing workflow scaffold
