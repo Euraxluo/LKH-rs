@@ -1,8 +1,8 @@
 # FastAPI Backend
 
-The browser integration path is now a native FastAPI service instead of a Wasm
-solver. The browser talks JSON only. The backend discovers LKH `.par` cases,
-reads the corresponding problem metadata, and calls the native solver.
+The browser integration path is a native FastAPI service. The browser talks
+JSON only. The backend discovers LKH `.par` cases, reads the corresponding
+problem metadata, and calls the native solver.
 
 Run the example:
 

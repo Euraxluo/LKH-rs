@@ -100,7 +100,6 @@ See [docs/fastapi.md](docs/fastapi.md) for the JSON payload shape.
 | `demo` | Builds the lightweight C demo configuration. |
 | `unsafe-ffi` | Exposes raw bindgen-generated LKH symbols under `lkh_rs::ffi`. Prefer the safe API when possible. |
 | `python` | Enables the PyO3 module used by maturin. |
-| `wasm-experimental` | Marks WebAssembly evaluation work; the full LKH backend is not yet browser-ready. |
 
 ## Python bindings
 
@@ -219,7 +218,6 @@ Use subprocess isolation for untrusted inputs or service workloads. See [docs/sa
 
 - [docs/performance.md](docs/performance.md) describes the current benchmark baseline and why safe parallelism should use multiple processes rather than multiple in-process threads.
 - [docs/fastapi.md](docs/fastapi.md) describes the current browser integration path using FastAPI and JSON.
-- [docs/wasm.md](docs/wasm.md) records the WebAssembly evaluation and current blockers. Browser-ready Wasm deployment is not currently supported.
 
 ## Roadmap
 
@@ -247,7 +245,6 @@ This project aims to provide full Rust bindings and practical integrations for L
 - [x] Optimize performance critical sections with Rust implementations (#8)
     - [x] Add a benchmark baseline and performance roadmap
     - [x] Document process-level parallelism as the safe path for concurrent solves
-- [x] Evaluate WebAssembly integration for web deployment (#9)
 
 Overall, LKH-rs uses Rust language features to minimize the unsafe code that application users need to write, while still making the underlying LKH capabilities available for advanced integrations.
 

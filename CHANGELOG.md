@@ -30,7 +30,6 @@ Initial public release candidate.
 
 ### Changed
 
-- Documented FastAPI as the browser integration path and recorded current Wasm
-  limitations.
+- Documented FastAPI as the browser integration path.
 - Documented subprocess isolation requirements for service workloads because
   upstream LKH can still terminate the current process on some malformed inputs.
