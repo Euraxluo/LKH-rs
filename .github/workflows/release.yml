@@ -16,7 +16,8 @@ jobs:
     name: Release plan
     runs-on: ubuntu-latest
     outputs:
-      publish: ${{ steps.plan.outputs.publish }}
+      publish_crate: ${{ steps.plan.outputs.publish_crate }}
+      publish_python: ${{ steps.plan.outputs.publish_python }}
       version: ${{ steps.plan.outputs.version }}
 
     steps:
@@ -68,24 +69,15 @@ jobs:
             exit 1
           fi
 
-          if [ "$crate_published" -ne "$python_published" ]; then
-            echo "Version $version is published on only one registry; refusing to continue" >&2
-            exit 1
-          fi
-
-          publish=1
-          if [ "$crate_published" -eq 1 ] && [ "$python_published" -eq 1 ]; then
-            publish=0
-          fi
-
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "publish_crate=$((1 - crate_published))" >> "$GITHUB_OUTPUT"
+          echo "publish_python=$((1 - python_published))" >> "$GITHUB_OUTPUT"
 
   python-wheels:
     name: Python wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: [release-plan]
-    if: needs.release-plan.outputs.publish == '1'
+    if: needs.release-plan.outputs.publish_python == '1'
     strategy:
       fail-fast: false
       matrix:
@@ -127,7 +119,7 @@ jobs:
     name: Python sdist
     runs-on: ubuntu-latest
     needs: [release-plan]
-    if: needs.release-plan.outputs.publish == '1'
+    if: needs.release-plan.outputs.publish_python == '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -152,29 +144,41 @@ jobs:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: [release-plan, python-wheels, python-sdist]
-    if: needs.release-plan.outputs.publish == '1'
+    if: always() && needs.release-plan.result == 'success'
     environment: pypi
     permissions:
       contents: read
       id-token: write
 
     steps:
+      - name: Check Python artifacts
+        if: needs.release-plan.outputs.publish_python == '1' && (needs.python-wheels.result != 'success' || needs.python-sdist.result != 'success')
+        run: |
+          echo "Python artifacts were not built successfully" >&2
+          exit 1
+
       - name: Download Python artifacts
+        if: needs.release-plan.outputs.publish_python == '1'
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
       - name: Publish
+        if: needs.release-plan.outputs.publish_python == '1'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+
+      - name: Skip publish
+        if: needs.release-plan.outputs.publish_python != '1'
+        run: echo "Python package version is already published"
 
   crates-io:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     needs: [release-plan, pypi]
-    if: needs.release-plan.outputs.publish == '1'
+    if: needs.release-plan.outputs.publish_crate == '1'
     environment: crates.io
 
     steps:

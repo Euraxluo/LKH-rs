@@ -16,6 +16,7 @@ Cargo.lock
 # Python extension build artifacts produced by maturin develop
 __pycache__/
 *.py[cod]
+dist/
 python/lkh_rs/_native*.so
 
 # LKH C sources may be built manually while debugging.
